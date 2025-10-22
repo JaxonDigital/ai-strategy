@@ -1,0 +1,24 @@
+# Audio files (too large for git)
+audio-reviews/
+
+# Node modules
+node_modules/
+
+# Browser profiles
+.browser-profile/
+
+# Scraped content
+scraped-articles/
+
+# Temporary files
+*.tmp
+*.log
+
+# Secrets and credentials
+.google-oauth-credentials.json
+.claude/settings.local.json
+.mcp.json
+
+# Submodules (tracked separately)
+jaxon-research-feed/
+mcp-googledocs-server/
