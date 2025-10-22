@@ -85,6 +85,8 @@ Full workflow documentation: `/Users/bgerby/Desktop/medium-article-review-workfl
 
 ### CRITICAL: Bypassing Medium Paywalls with Playwright
 
+**⚠️ ABSOLUTE REQUIREMENT:** Do NOT EVER process a paywalled article without properly gaining access to the entire article by having the user log in first. This is a hard requirement - no exceptions. Never generate PDFs, audio reviews, or analysis based on paywall preview content.
+
 **Problem:** Many Medium articles are paywalled. PDFs saved without authentication show only preview content (~115KB files with "Create an account" message).
 
 **Solution:** Use Playwright MCP with persistent browser session and manual login.
@@ -216,7 +218,7 @@ PDFs and MP3s are uploaded using the Google Drive Python API (not MCP). The work
 
 ## Complete Streamlined Workflow
 
-**Updated:** October 21, 2025 - Unified, repeatable process
+**Updated:** October 22, 2025 - Added Google Doc formatting and JIRA comment improvements
 
 ### Scripts
 
@@ -310,6 +312,54 @@ python3 /Users/bgerby/Desktop/upload-audio-to-drive.py
 # - Gets shareable links
 # - Updates JIRA tickets with audio links
 ```
+
+**Step 6a: Create Strategic Analysis and Google Docs (For Individual High-Priority Articles)**
+
+For high-priority articles that warrant detailed strategic analysis:
+
+1. **Create Strategic Analysis Markdown**:
+   - Document: `/Users/bgerby/Desktop/GAT-XXX-article-review.md`
+   - Include: 5-star relevance rating, executive summary, key insights, strategic implications, action items
+
+2. **Upload to Google Drive**:
+   ```bash
+   # Use upload script to get PDF, MP3, and analysis files to Drive
+   # Files go to: YYYY/MM-Month/DD/PDFs/, MP3s/, Summaries/ folders
+   ```
+
+3. **Create and Format Google Doc**:
+   ```bash
+   # Create Google Doc using MCP
+   # Then format with proper markdown conversion
+   python3 /tmp/format-google-doc.py
+   ```
+
+   The formatting script (`/tmp/format-google-doc.py`):
+   - Parses markdown to identify headings, bold/italic, lists
+   - Applies Google Docs native formatting (Heading 1/2/3, bold, italic)
+   - Much better than raw markdown text dump
+   - Reusable for all future strategic analysis documents
+
+4. **Update JIRA with Google Drive Links**:
+   ```bash
+   # CRITICAL: Use temp file approach to avoid heredoc hangs
+   cat > /tmp/jira-comment.txt << 'EOF'
+   **Google Drive Links:**
+   - **PDF:** https://drive.google.com/file/d/FILE_ID/view?usp=sharing
+   - **Audio Review:** https://drive.google.com/uc?export=download&id=FILE_ID
+   - **Strategic Analysis (Google Doc):** https://docs.google.com/document/d/DOC_ID/edit
+   - **Strategic Analysis (Markdown):** https://drive.google.com/uc?export=download&id=FILE_ID
+   EOF
+
+   # Then add comment
+   JIRA_API_TOKEN="`cat ~/.jira.d/.pass`" jira issue comment add GAT-XXX "$(cat /tmp/jira-comment.txt)" --no-input
+   ```
+
+   **Why Temp File Approach:**
+   - Heredoc syntax with jira CLI causes the command to hang waiting for stdin
+   - Using `$(cat file.txt)` works reliably
+   - Always use backticks for token: `` `cat ~/.jira.d/.pass` `` not `$(cat ...)`
+   - Always add `--no-input` flag to prevent interactive prompts
 
 **Step 7: Final JIRA Ticket Format**
 
