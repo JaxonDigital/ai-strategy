@@ -420,6 +420,346 @@ To be reviewed for relevance to Jaxon Digital's AI agent initiatives.
 - Check ticket ID is correct (GAT-XXX)
 - Use `--no-input` flag to avoid interactive prompts
 
+## Optimizely World Blog Monitoring Workflow
+
+### Purpose
+
+**Fully automated** monitoring of Optimizely World blog RSS feed. Automatically creates JIRA tickets for new articles with zero manual intervention required.
+
+### Scripts
+
+All scripts located in `/Users/bgerby/Documents/dev/ai/scripts/`:
+
+1. **`monitor-optimizely-blog.py`** - RSS feed monitoring with **automatic JIRA ticket creation**
+2. **`scrape-optimizely-history.py`** - One-time historical backfill scraper (optional)
+3. **`capture-optimizely-articles.py`** - PDF capture helper (generates Playwright manifest)
+
+### RSS Feed
+
+- **URL**: `https://world.optimizely.com/blogs/?feed=RSS`
+- **Format**: RSS 2.0 with Dublin Core namespace
+- **Update Frequency**: TTL 60 minutes (feed refreshes hourly)
+- **Articles**: Returns most recent 20 blog posts
+
+### State Tracking
+
+- **State File**: `~/.optimizely-blog-state.json`
+- **Purpose**: Track seen article GUIDs and URL-to-ticket mappings to prevent duplicate processing
+- **Format**:
+  ```json
+  {
+    "seen_guids": ["https://world.optimizely.com/..."],
+    "last_check": "2025-10-23T01:34:29.456667",
+    "created_tickets": {
+      "article-guid": {
+        "ticket_id": "GAT-XXX",
+        "title": "Article Title",
+        "url": "https://...",
+        "created_at": "2025-10-23..."
+      }
+    },
+    "url_to_ticket": {
+      "http://johnnymullaney.com/?p=3906": "GAT-333",
+      "https://world.optimizely.com/blogs/...": "GAT-350"
+    }
+  }
+  ```
+
+### Duplicate Detection
+
+**Updated:** October 23, 2025
+
+Both monitoring scripts include robust duplicate detection to prevent creating tickets for articles already processed (either automatically or manually):
+
+**Two-Tier Detection Approach:**
+1. **State File Check (Fast)**: Checks `url_to_ticket` mapping in state file
+2. **JIRA Search (Fallback)**: Searches existing GAT tickets for matching URLs
+
+**Implementation:**
+- Function: `check_existing_ticket_by_url(article_url, state)`
+- Returns: `(ticket_id, exists)` tuple
+- Behavior: Skips ticket creation if duplicate found, logs existing ticket ID
+
+**Verified Working:**
+- Automated test: `python3 scripts/monitor-optimizely-blog.py --dry-run`
+- Result: Correctly identifies all 20 RSS articles as already processed
+- No false positives or duplicate tickets created
+
+**Known Limitation:**
+WordPress blogs may use different URL formats for same article:
+- Full permalink: `https://johnnymullaney.com/2025/10/20/article-slug/`
+- Shortlink: `http://johnnymullaney.com/?p=3906`
+
+Current implementation uses exact URL matching. Future enhancement could add URL normalization/resolution.
+
+### Initial Setup (One-Time)
+
+Choose ONE of the following approaches:
+
+#### Option A: RSS-Only Backfill (Recommended - Most Recent ~20 Articles)
+
+```bash
+cd /Users/bgerby/Documents/dev/ai
+
+# Fetch recent articles and automatically create JIRA tickets
+python3 scripts/monitor-optimizely-blog.py --backfill
+
+# This automatically:
+# - Fetches all articles from RSS feed
+# - Creates JIRA tickets for each article
+# - Updates state file
+# - Outputs summary with ticket IDs
+```
+
+**Output:**
+```
+=== BACKFILL MODE: Processing all articles ===
+Found 20 articles in RSS feed
+
+=== NEW ARTICLES TO PROCESS (20) ===
+ 1. [2025-10-06] Automated Page Audit for Large Content Sites
+ 2. [2025-10-08] Image Generation with Gemini 2.5 Flash
+...
+
+=== CREATING JIRA TICKETS ===
+[1/20] Automated Page Audit for Large Content Sites...
+  ✓ Created GAT-350
+[2/20] Image Generation with Gemini 2.5 Flash...
+  ✓ Created GAT-351
+...
+
+=== SUMMARY ===
+Total new articles: 20
+Tickets created: 20
+Skipped (duplicates): 0
+Failed: 0
+```
+
+**Duplicate Detection in Action:**
+If articles already exist as tickets (manually or automatically created), they're skipped:
+```
+=== CREATING JIRA TICKETS ===
+[1/20] Automated Page Audit for Large Content Sites...
+  ⊙ Already exists: GAT-350 (skipped)
+[2/20] Image Generation with Gemini 2.5 Flash...
+  ✓ Created GAT-351
+...
+
+=== SUMMARY ===
+Total new articles: 20
+Tickets created: 1
+Skipped (duplicates): 19
+Failed: 0
+```
+
+#### Option B: Historical Backfill (Optional - All 1163 Pages)
+
+**Use only if you want ALL historical articles, not just recent ones.**
+
+```bash
+cd /Users/bgerby/Documents/dev/ai
+
+# Scrape paginated HTML and automatically create tickets
+python3 scripts/scrape-optimizely-history.py
+
+# This automatically:
+# - Scrapes paginated blog pages (1, 2, 3...)
+# - Extracts article metadata from HTML
+# - Creates JIRA tickets for new articles
+# - Stops when reaching articles already seen
+# - Updates state file incrementally
+
+# Optional flags:
+# --start-page N      : Start from specific page
+# --max-pages N       : Limit to N pages
+# --since-date YYYY-MM-DD : Only articles after date
+# --dry-run           : Test without creating tickets
+```
+
+**Note:** Historical scrape may take 30+ minutes for full backfill and create 100+ tickets. Use `--dry-run` first to preview.
+
+**Ticket Format:**
+```markdown
+Optimizely World Blog Article
+
+**Article URL:** https://world.optimizely.com/...
+**Published:** 2025-10-XX...
+**Source:** Optimizely World Blog (world.optimizely.com)
+
+To be reviewed for relevance to Jaxon Digital's AI agent initiatives and Optimizely platform strategy.
+```
+
+### Daily Automated Workflow (After Initial Setup)
+
+```bash
+cd /Users/bgerby/Documents/dev/ai
+
+# Run this daily (manually or via cron)
+python3 scripts/monitor-optimizely-blog.py
+
+# This automatically:
+# - Checks RSS feed for new articles
+# - Compares against state file
+# - Creates JIRA tickets for new articles only
+# - Updates state file
+# - Outputs summary
+
+# No new articles? Script outputs:
+#   "No new articles to process."
+#
+# New articles found? Tickets created automatically:
+#   ✓ Created GAT-XXX
+#   ✓ Created GAT-YYY
+```
+
+**That's it!** No manual ticket creation needed. The workflow is now:
+1. Script runs (daily)
+2. New articles → JIRA tickets created automatically (duplicates skipped)
+3. Proceed to PDF capture/assessment for new tickets
+
+**Duplicate Protection:**
+- Automatically skips articles already processed
+- Works for both automated runs and manually created tickets
+- Logs existing ticket ID when duplicate found
+- No false positives or wasted API calls
+
+### Next Steps After Tickets Created
+
+Once JIRA tickets are created (either from initial setup or daily run), proceed with:
+
+#### Step 1: Capture Articles as PDFs
+
+```bash
+# Option A: Use Playwright MCP (recommended for varied content)
+# Ask Claude Code to:
+# 1. Read metadata from /tmp/optimizely-articles.json
+# 2. Create output directory: /Users/bgerby/Desktop/optimizely-articles-YYYY-MM-DD/
+# 3. Navigate to each article URL with Playwright
+# 4. Save as PDF: 01-article-title.pdf, 02-article-title.pdf, etc.
+# 5. Keep browser open between articles (session persistence)
+
+# Option B: Use capture script (generates Playwright manifest)
+python3 scripts/capture-optimizely-articles.py \
+    /tmp/optimizely-articles.json \
+    /Users/bgerby/Desktop/optimizely-articles-YYYY-MM-DD
+
+# This creates playwright-manifest.json with article list for manual capture
+```
+
+**PDF Naming Convention:**
+- `01-article-title-slug.pdf` (sequential numbering)
+- File size varies by article length (typically 200KB-2MB)
+
+#### Step 4: Upload PDFs to Google Drive
+
+Use existing Medium workflow scripts:
+```bash
+# Upload PDFs and update JIRA tickets with Drive links
+# (Reuse upload-to-drive-helper.py or manual upload via MCP)
+```
+
+#### Step 5: Create Relevance Assessment
+
+Ask Claude Code to:
+1. Read all PDFs from optimizely-articles-YYYY-MM-DD/
+2. Assess relevance to Jaxon Digital AI initiatives
+3. Categorize as HIGH/MEDIUM/LOW priority
+4. Create assessment document: `/Users/bgerby/Desktop/optimizely-articles-relevance-assessment-YYYY-MM-DD.md`
+5. Save to Google Drive Summaries folder
+
+**Assessment Criteria:**
+- HIGH: Direct relevance to MCP development, AI agents, or competitive intelligence
+- MEDIUM: Optimizely platform features, DevOps automation, or CMS enhancements
+- LOW: Niche technical implementations or peripheral topics
+
+#### Step 6: Generate Audio for High-Priority Articles
+
+Same workflow as Medium articles:
+```bash
+export OPENAI_API_KEY="sk-proj-..."
+python3 /Users/bgerby/Desktop/generate-audio-from-assessment.py \
+    /Users/bgerby/Desktop/optimizely-articles-YYYY-MM-DD \
+    /Users/bgerby/Desktop/optimizely-articles-relevance-assessment-YYYY-MM-DD.md
+```
+
+#### Step 7: Update Podcast Feed
+
+```bash
+cd /Users/bgerby/Documents/dev/ai/jaxon-research-feed
+python3 sync-audio-to-drive.py
+python3 generate-feed.py
+git add feed.rss && git commit -m "Add Optimizely World articles" && git push
+```
+
+### High-Priority Article Examples
+
+From October 2025 backfill (GAT-350 to GAT-369), these are HIGH priority for Jaxon:
+
+1. **GAT-356**: "Building a Discovery-First MCP for Optimizely CMS – Part 1 of 4" (Johnny Mullaney)
+   - Direct competitive intelligence - another developer building Optimizely MCP
+   - Technical deep-dive into MCP architecture
+
+2. **GAT-333** (manual), **GAT-365** (duplicate, deleted): "How Optimizely MCP Learns Your CMS (and Remembers It)" (Johnny Mullaney Part 2)
+   - Continuation of MCP series - caching and performance optimization
+   - Note: GAT-365 was duplicate of GAT-333 (different URL formats)
+
+3. **GAT-359**: "AI Tools, MCP, and Function Calling for Optimizely"
+   - MCP integration patterns with AI tools
+   - Function calling vs MCP comparison
+
+4. **GAT-368**: "Connecting the Dots Between Research and Specification to Implementation using NotebookLM"
+   - AI-assisted implementation workflow
+   - Google NotebookLM for knowledge management
+
+### Troubleshooting
+
+**RSS feed returns 403 Forbidden:**
+- Script includes User-Agent header to avoid blocking
+- If blocked, try updating User-Agent in monitor-optimizely-blog.py:60
+
+**No new articles found:**
+- RSS feed only returns most recent 20 articles
+- Older articles will no longer appear in incremental runs
+- Check state file to verify expected articles are marked as seen
+
+**Article capture fails:**
+- Some articles may be on personal blogs with anti-scraping measures
+- Use Playwright MCP with manual browser session for problematic articles
+- Verify URL is accessible in normal browser first
+
+**JIRA ticket creation fails:**
+- Check JIRA API token is valid: `cat ~/.jira.d/.pass`
+- Verify jira CLI is installed: `which jira`
+- Check jira CLI config: `~/.config/.jira/.config.yml`
+- Script has 60-second timeout per ticket
+- Failed tickets are reported in summary - can retry by running script again
+
+**Duplicate tickets created:**
+- As of October 23, 2025: Duplicate detection implemented and verified working
+- Skips articles already processed (checks both state file and JIRA)
+- Known limitation: WordPress permalink vs shortlink variations may slip through
+- If duplicates found: Delete newer ticket, URL mapping in state prevents recurrence
+
+### Integration with Medium Workflow
+
+The Optimizely World workflow is designed to run alongside the Medium article workflow:
+
+**Combined Daily Process:**
+1. Process Medium email digest (existing workflow)
+2. Check Optimizely RSS for new articles (new workflow)
+3. Capture all PDFs (both sources)
+4. Upload to Google Drive (both sources)
+5. Create unified relevance assessment (both sources together)
+6. Generate audio for HIGH priority articles (both sources)
+7. Update podcast feed (both sources)
+
+**Shared Infrastructure:**
+- Same Google Drive folder structure (separate Optimizely-* folders)
+- Same audio generation scripts and OpenAI TTS
+- Same podcast feed (jaxon-research-feed)
+- Same JIRA project (GAT)
+- Same assessment criteria and priority levels
+
 ## Repository Type
 
 This is a **documentation/analysis repository**, not a code repository. There are no build commands, tests, or deployment processes. Work here involves strategic analysis, business planning, and documentation refinement.
