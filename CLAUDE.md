@@ -218,7 +218,11 @@ PDFs and MP3s are uploaded using the Google Drive Python API (not MCP). The work
 
 ## Complete Streamlined Workflow
 
-**Updated:** October 22, 2025 - Added Google Doc formatting and JIRA comment improvements
+**Updated:** October 23, 2025
+- Added automated PDF assessment script (generate-article-assessment.py)
+- Added Medium recommendation analysis feature
+- Completed full workflow for Optimizely World articles (GAT-350 through GAT-369)
+- Published 7 HIGH priority episodes to podcast feed
 
 ### Scripts
 
@@ -226,8 +230,10 @@ All scripts located at `/Users/bgerby/Desktop/`:
 
 1. **`extract-medium-articles.py`** - Extract URLs from email, create JIRA tickets
 2. **`upload-to-drive-helper.py`** - Upload PDFs to Google Drive, update JIRA (used by Claude Code)
-3. **`generate-audio-from-assessment.py`** - Generate audio from high-priority PDFs
-4. **`upload-audio-to-drive.py`** - Upload audio to Drive, update JIRA
+3. **`generate-article-assessment.py`** - Automated PDF analysis and relevance assessment using OpenAI GPT-4 (NEW - October 23, 2025)
+4. **`generate-audio-from-assessment.py`** - Generate audio from high-priority PDFs
+5. **`upload-audio-to-drive.py`** - Upload audio to Drive, update JIRA
+6. **`generate-medium-recommendations.py`** - Analyze relevance assessment and generate recommendations for improving Medium follows (NEW - October 23, 2025)
 
 ### Step-by-Step Process
 
@@ -271,14 +277,127 @@ Or manually in Claude Code session:
 - Get shareable link
 - Update JIRA ticket description with PDF link
 
-**Step 4: Review Articles and Create Assessment (Via Claude Code)**
+**Step 4: Review Articles and Create Assessment (Automated with Python + OpenAI)**
 
-Ask Claude Code to:
-1. Read all PDFs
-2. Assess relevance to Jaxon Digital AI initiatives
-3. Categorize as HIGH/MEDIUM/LOW priority
-4. Create assessment document: `/Users/bgerby/Desktop/medium-articles-relevance-assessment-YYYY-MM-DD.md`
-5. Save to Google Drive Summaries folder
+**NEW (October 23, 2025):** Use automated Python script to avoid Claude token limit issues when processing large batches.
+
+```bash
+# Set OpenAI API key (required)
+export OPENAI_API_KEY="sk-proj-..."
+
+# Run automated assessment script
+python3 /Users/bgerby/Desktop/generate-article-assessment.py \
+    /Users/bgerby/Desktop/medium-articles-YYYY-MM-DD/ \
+    /tmp/medium-articles.json \
+    /Users/bgerby/Desktop/medium-articles-relevance-assessment-YYYY-MM-DD.md
+
+# This:
+# - Extracts text from all PDFs using pdftotext
+# - Analyzes each article with GPT-4 Turbo using Jaxon strategic context
+# - Handles large PDFs by chunking with overlap (no token limits!)
+# - Categorizes as HIGH/MEDIUM/LOW priority
+# - Generates comprehensive markdown assessment document
+```
+
+**Why Python Script vs Claude Code:**
+- **Scalability**: Handles 20, 50, 100+ articles without token limits
+- **Consistency**: Same strategic criteria applied uniformly to all articles
+- **Chunking**: Automatically splits large documents (12K+ chars) with overlap
+- **Speed**: Parallel processing with rate limiting
+- **Reliability**: Robust error handling, continues on failures
+
+**OpenAI Analysis Quality:**
+- Uses GPT-4 Turbo for strategic assessment
+- Full Jaxon Digital context injected in every prompt
+- Structured JSON output for consistency
+- Synthesis step for multi-chunk articles
+
+**Hybrid Approach (Best Results):**
+After Python script generates initial assessment:
+1. Claude Code reviews the assessment markdown (much smaller than all PDFs)
+2. Claude adds meta-analysis and strategic synthesis
+3. Claude creates detailed deep-dives for HIGH priority articles
+4. Claude handles integration work (Drive uploads, JIRA updates)
+
+**Alternative (Claude Only):**
+For small batches (3-5 articles) or when you want Claude's direct analysis:
+- Ask Claude Code to read PDFs sequentially
+- Process in small groups to avoid token limits
+- Takes longer but provides Claude's native reasoning
+
+**Script Location:** `/Users/bgerby/Desktop/generate-article-assessment.py`
+
+**Step 4a: Generate Medium Recommendation Analysis (NEW - October 23, 2025)**
+
+After creating the relevance assessment, generate recommendations for improving Medium's daily digest:
+
+```bash
+# Run recommendation analysis script
+python3 /Users/bgerby/Desktop/generate-medium-recommendations.py \
+    /Users/bgerby/Desktop/medium-articles-relevance-assessment-YYYY-MM-DD.md \
+    /tmp/medium-articles-10-23.json \
+    /Users/bgerby/Desktop/medium-articles-YYYY-MM-DD/
+
+# Optional: PDF directory parameter for extracting author metadata
+# If omitted, uses @username from article URLs
+```
+
+**Output Format:**
+- Prints to console (no files created)
+- Specific actionable recommendations grouped by type:
+  - ✅ **Authors to Follow**: Based on HIGH priority articles
+  - 📰 **Publications to Follow**: Publications producing HIGH priority content
+  - ➕ **Topics to Add**: New Medium topics based on HIGH priority content
+  - ❌ **Consider Unfollowing**: Topics producing only LOW priority articles
+  - 🔕 **Articles to Mute**: Specific LOW priority articles with reasons
+
+**Analysis Logic:**
+- HIGH priority article author → Strong follow recommendation
+- HIGH priority article publication → Follow recommendation
+- Article content/keywords → Suggest new topics (e.g., "Model Context Protocol", "Agentic AI")
+- LOW priority articles → Mute recommendations with specific reasons
+- Topics producing only LOW priority → Consider unfollowing
+
+**Example Output:**
+```
+======================================================================
+MEDIUM RECOMMENDATION ANALYSIS
+======================================================================
+Date: 2025-10-23
+Articles Reviewed: 15 (5 HIGH, 6 MEDIUM, 4 LOW)
+
+RECOMMENDED ACTIONS:
+
+✅ FOLLOW THESE AUTHORS:
+  1. Follow @johnnymullaney
+     Reason: Wrote 2 HIGH priority articles about Optimizely MCP development
+     Articles: GAT-333, GAT-356
+
+➕ ADD THESE TOPICS:
+  1. Follow topic 'Model Context Protocol'
+     Reason: 9 points from HIGH priority articles with MCP content
+
+🔕 MUTE THESE ARTICLES (LOW PRIORITY):
+  1. Mute 'The Most Efficient Fat Loss Exercise On The Planet...'
+     By: @ashley-richmond
+     Reason: Completely off-topic. Health/fitness content not relevant.
+
+======================================================================
+CURRENT FOLLOWING STATUS (for reference):
+======================================================================
+Writers: Medium Staff
+Publications: The Context Layer
+Topics: Artificial Intelligence, Technology, Self Improvement
+
+💡 Tip: Visit https://medium.com/me/following/suggestions to refine
+======================================================================
+```
+
+**Integration with Workflow:**
+- Run after creating relevance assessment
+- Review recommendations before continuing to audio generation
+- Use recommendations to improve future digest quality
+- No JIRA ticket created (for now) - just console output
 
 **Step 5: Generate Audio for High-Priority Articles**
 
@@ -658,19 +777,35 @@ Use existing Medium workflow scripts:
 # (Reuse upload-to-drive-helper.py or manual upload via MCP)
 ```
 
-#### Step 5: Create Relevance Assessment
+#### Step 5: Create Relevance Assessment (Automated)
 
-Ask Claude Code to:
-1. Read all PDFs from optimizely-articles-YYYY-MM-DD/
-2. Assess relevance to Jaxon Digital AI initiatives
-3. Categorize as HIGH/MEDIUM/LOW priority
-4. Create assessment document: `/Users/bgerby/Desktop/optimizely-articles-relevance-assessment-YYYY-MM-DD.md`
-5. Save to Google Drive Summaries folder
+Use the automated Python script (same as Medium workflow):
 
-**Assessment Criteria:**
+```bash
+# Set OpenAI API key
+export OPENAI_API_KEY="sk-proj-..."
+
+# Run automated assessment
+python3 /Users/bgerby/Desktop/generate-article-assessment.py \
+    /Users/bgerby/Desktop/optimizely-articles-YYYY-MM-DD/ \
+    /tmp/optimizely-articles.json \
+    /Users/bgerby/Desktop/optimizely-articles-relevance-assessment-YYYY-MM-DD.md
+
+# This:
+# - Extracts and analyzes all PDFs with GPT-4 Turbo
+# - Handles large batches without token limits
+# - Applies Jaxon strategic context to each article
+# - Generates comprehensive markdown assessment
+```
+
+**Assessment Criteria (Built into script):**
 - HIGH: Direct relevance to MCP development, AI agents, or competitive intelligence
 - MEDIUM: Optimizely platform features, DevOps automation, or CMS enhancements
 - LOW: Niche technical implementations or peripheral topics
+
+**After Script Completes:**
+- Optionally: Ask Claude Code to review assessment and add meta-analysis
+- Upload assessment markdown to Google Drive Summaries folder
 
 #### Step 6: Generate Audio for High-Priority Articles
 
