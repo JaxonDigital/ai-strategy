@@ -201,6 +201,10 @@ Shared Drive Root (0ALLCxnOLmj3bUk9PVA)
 - MP3s: `1NB1a1jGrqTmXvSw8CVQAsi_j05DCBg59`
 - Summaries: `1rFhAPnn7HNTEZqM6OQOdRS2rWAwEDW-E`
 
+**Example (October 23, 2025):**
+- Day folder (23): `1eaaR8ScCGFyti1Y7Alr8zyVsUQevQWl5`
+  - Contains 13 audio files (7 Optimizely + 6 Medium)
+
 **Creating Folder Structure Dynamically:**
 Folders are created as needed based on article date. Use the pattern:
 1. Check if year folder exists (search for "YYYY" in Shared Drive root)
@@ -218,7 +222,12 @@ PDFs and MP3s are uploaded using the Google Drive Python API (not MCP). The work
 
 ## Complete Streamlined Workflow
 
-**Updated:** October 23, 2025
+**Updated:** October 24, 2025
+- Fixed Medium recommendation script to provide author-level recommendations (Medium doesn't support article-level muting)
+- Completed October 23 article processing: 13 total episodes (7 Optimizely + 6 Medium)
+- All audio files uploaded to correct Drive folder and RSS feed updated
+
+**Previous Update:** October 23, 2025
 - Added automated PDF assessment script (generate-article-assessment.py)
 - Added Medium recommendation analysis feature
 - Completed full workflow for Optimizely World articles (GAT-350 through GAT-369)
@@ -329,6 +338,8 @@ For small batches (3-5 articles) or when you want Claude's direct analysis:
 
 **Step 4a: Generate Medium Recommendation Analysis (NEW - October 23, 2025)**
 
+**Updated:** October 24, 2025 - Fixed muting section to provide author-level recommendations instead of article-level (Medium doesn't support muting individual articles)
+
 After creating the relevance assessment, generate recommendations for improving Medium's daily digest:
 
 ```bash
@@ -349,7 +360,7 @@ python3 /Users/bgerby/Desktop/generate-medium-recommendations.py \
   - 📰 **Publications to Follow**: Publications producing HIGH priority content
   - ➕ **Topics to Add**: New Medium topics based on HIGH priority content
   - ❌ **Consider Unfollowing**: Topics producing only LOW priority articles
-  - 🔕 **Articles to Mute**: Specific LOW priority articles with reasons
+  - ⚠️ **Authors to Watch**: Authors producing LOW priority content (grouped by frequency)
 
 **Analysis Logic:**
 - HIGH priority article author → Strong follow recommendation
