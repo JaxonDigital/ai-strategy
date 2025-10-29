@@ -310,6 +310,34 @@ python3 scripts/scrape-optimizely-history.py --dry-run
 5. **Generate recommendations** → outputs to `outputs/medium-recommendations-YYYY-MM-DD.txt` ✨
 6. Generate audio → **automatically uploads to Drive + updates JIRA** ✨
 
+## Workflow Improvements (October 29, 2025)
+
+### 🔧 Podcast Feed Reliability
+
+**Issue Fixed:** Missing Google Drive URLs for historical episodes
+- 7 episodes (GAT-466 to GAT-471, GAT-11) were using non-existent GitHub Pages URLs
+- Root cause: drive-urls.json missing entries for audio files generated before automation was complete
+
+**Solution Implemented:**
+1. Query JIRA tickets to extract Google Drive audio URLs
+2. Update drive-urls.json with missing entries (now 80 total)
+3. Regenerate RSS feed with corrected URLs
+4. Push to GitHub Pages
+
+**Files Updated:**
+- `/Users/bgerby/Documents/dev/ai/audio-reviews/drive-urls.json` - Added 7 missing entries
+- `/Users/bgerby/Documents/dev/ai/jaxon-research-feed/feed.rss` - Regenerated with correct URLs
+
+**Verification:**
+- All 80 episodes now use Google Drive download URLs
+- No episodes pointing to GitHub Pages
+- Feed validated with comprehensive audit script
+
+**Maintenance Note:**
+- drive-urls.json is the source of truth for audio file URLs
+- RSS feed generator checks drive-urls.json first before defaulting to GitHub Pages
+- Always regenerate RSS feed after updating drive-urls.json
+
 **Optimizely Articles**:
 1. Monitor RSS → **optionally upload PDFs with `--upload-pdfs` flag** ✨
 2. Capture PDFs (if not using `--upload-pdfs`)
