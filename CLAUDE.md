@@ -12,25 +12,55 @@ This file provides guidance to Claude Code when working with this repository.
 
 ## Business Context
 
-### Company Profile
+⚠️ **IMPORTANT: Strategic Transformation in Progress (October 2025)**
+
+Jaxon Digital is undergoing a 6-month transformation documented in the **Pivot project**.
+
+**Canonical Strategy Source**: `/Users/bgerby/Documents/dev/pivot/sprint-0/STRATEGIC_CONTEXT.md`
+
+### Strategic Transformation
+
+**FROM (Legacy):**
+- Optimizely implementation partner (billable hours)
+- Managed services ($8-20K/month)
+- Target: Existing Optimizely clients
+
+**TO (New Direction):**
+- **AI Operations Platform** (SaaS model, recurring revenue)
+- **Product-led growth** targeting agencies first, then enterprises
+- **Multi-tenant platform** with 17+ agent catalog
+- **Subscription tiers**: $199-999/mo (agencies), $150K-500K ARR (enterprise)
+- **Value proposition**: Autonomous agents handling 80%+ of operations
+
+### Current Focus (Updated October 2025)
+1. **Agent #19 (Early Warning System)** - TOP PRIORITY production agent
+2. **Platform Architecture** - Multi-tenant SaaS foundation
+3. **Agent Orchestration** - Hybrid LangGraph + n8n approach (PP-14)
+4. **Agency Partnerships** - Go-to-market through Optimizely agency partners
+5. **Learning Systems** - Feedback loops and continuous improvement ("Top 5% AI That Actually Works")
+
+### Technology Stack
+- **LangGraph** for complex agent orchestration (primary)
+- **n8n** for simple workflows and integrations (secondary)
+- **Custom MCPs** for Optimizely-specific operations
+- **Multi-tenant architecture** for SaaS platform
+- **Event-driven agents** with learning/feedback loops
+
+### Meta-Pivot Strategy (Transferability)
+- **20% Layer**: Optimizely-specific (DXP operations)
+- **60% Layer**: Platform mechanics (multi-tenant, billing, orchestration)
+- **95% Layer**: Universal patterns (agent design, monitoring, learning)
+
+**For detailed strategic context, see**: `/Users/bgerby/Documents/dev/pivot/` (PP JIRA board)
+
+### Legacy Business Model (Pre-October 2025)
+*Note: This describes the old implementation partner model being phased out*
+
 - **Company**: Jaxon Digital (Optimizely implementation partner)
 - **Assets**: 3 built MCPs for Optimizely DXP (CMS, Commerce, Operations)
 - **Focus**: Custom MCP and agent development for Optimizely CMS/Commerce/DevOps
 - **Service Model**: Managed services (setup + monthly monitoring/operations)
 - **Target Market**: Existing Optimizely clients and enterprises with custom systems
-
-### Strategic Focus
-1. **Custom Optimizely Agents** - Production agents (e.g., Deployment Agent for DXP)
-2. **Custom MCP Development** - Client-specific system integrations ($40-100K per MCP)
-3. **Client System Integration** - Legacy/proprietary systems to Optimizely
-4. **Managed Agent Operations** - Ongoing monitoring/maintenance ($8-20K/month)
-5. **CMS/DevOps Automation** - Deployment workflows, content ops, infrastructure
-
-### Technology Stack
-- **n8n** for workflow orchestration (MCP support on roadmap)
-- **Custom MCPs** for Optimizely-specific operations
-- **Proactive monitoring agents** - Event-driven architecture
-- **Multi-MCP orchestration** - Complex workflows combining multiple MCPs
 
 ## Project Management
 
@@ -62,26 +92,37 @@ Daily process for reviewing Medium articles and Optimizely World blog posts, tra
 
 | Step | Description | Key Script |
 |------|-------------|------------|
-| 1. Extract | Parse emails/RSS, create JIRA tickets | `extract-medium-articles.py` or `monitor-optimizely-blog.py` |
-| 2. Capture | Save articles as PDFs via Playwright | Via Claude Code with Playwright MCP |
-| 3. Upload | Upload PDFs to Google Drive | `upload-to-drive-helper.py` |
-| 4. Assess | Analyze relevance with GPT-4 | `generate-article-assessment.py` |
-| 5. Recommend | Generate Medium follow/mute suggestions | `generate-medium-recommendations.py` |
-| 6. Audio | Generate podcast episodes for HIGH priority | `generate-audio-from-assessment.py` |
-| 7. Publish | Upload to Drive, update RSS feed | `sync-audio-to-drive.py`, `generate-feed.py` |
+| 1. Capture | Save articles as PDFs via Playwright | Via Claude Code with Playwright MCP |
+| 2. Extract | Parse emails/RSS, create JIRA tickets **WITH PDF LINKS** | `extract-medium-articles.py` or `monitor-optimizely-blog.py` |
+| 3. Assess | Analyze relevance with GPT-4 | `generate-article-assessment.py` |
+| 4. Recommend | Generate Medium follow/mute suggestions | `generate-medium-recommendations.py` |
+| 5. Audio | Generate podcast episodes for HIGH priority | `generate-audio-from-assessment.py` |
+| 6. Publish | Upload to Drive, update RSS feed | Automatic in audio generation |
+
+**⚠️ IMPORTANT CHANGE (October 30, 2025):** PDF links are now **MANDATORY** in JIRA tickets. Always capture PDFs BEFORE creating tickets.
 
 ### Quick Start Commands
 
 **Medium Articles:**
 ```bash
-# Step 1: Extract from email
-python3 /Users/bgerby/Desktop/extract-medium-articles.py /Users/bgerby/Desktop/MM-DD.eml --create-tickets --output-json /tmp/medium-articles.json
-
-# Step 2: Capture PDFs (ask Claude Code to use Playwright)
+# Step 1: Capture PDFs (ask Claude Code to use Playwright)
 # - Navigate with headless: false for manual login
 # - Save as PDF: 01-article.pdf, 02-article.pdf, etc.
 # - Keep browser open between articles
 # - Files 400KB+ = success, ~115KB = paywall
+# - Save to: ~/Desktop/medium-articles-YYYY-MM-DD/
+
+# Step 2: Extract from email AND upload PDFs (combined step)
+python3 scripts/extract-medium-articles.py \
+    ~/Desktop/MM-DD.eml \
+    --create-tickets \
+    --upload-to-drive ~/Desktop/medium-articles-YYYY-MM-DD/ \
+    --output-json /tmp/medium-articles.json
+
+# ✓ This automatically:
+#   - Uploads PDFs to Google Drive
+#   - Creates JIRA tickets WITH PDF links
+#   - Generates metadata JSON
 
 # Step 4: Assess articles
 export OPENAI_API_KEY="sk-proj-..."
@@ -223,13 +264,25 @@ Root (0ALLCxnOLmj3bUk9PVA)
 - Sequential playback in podcast apps
 - HIGH priority articles only
 
-### Assessment Criteria
+### Assessment Criteria (Updated for SaaS Pivot - October 2025)
 
-| Priority | Criteria |
-|----------|----------|
-| **HIGH** | Direct relevance to MCP development, AI agents, competitive intelligence |
-| **MEDIUM** | Optimizely platform features, DevOps automation, CMS enhancements |
-| **LOW** | Niche technical implementations, peripheral topics |
+**Note**: Article assessment now uses strategic context from Pivot project automatically.
+Scripts load from: `/Users/bgerby/Documents/dev/pivot/sprint-0/STRATEGIC_CONTEXT.md`
+
+| Priority | Criteria (SaaS Platform Focus) |
+|----------|--------------------------------|
+| **HIGH** | SaaS business models & pricing, multi-tenant architecture, agent orchestration (LangGraph/AutoGen), product-led growth, agency partnerships, learning systems, marketplace strategies, Optimizely DXP technical content |
+| **MEDIUM** | DevOps automation patterns, CMS/Commerce features, cloud optimization, monitoring/observability, customer onboarding, PLG tactics, competitive analysis |
+| **LOW** | Generic business advice, unrelated technical topics, consumer product strategies, non-AI automation approaches |
+
+**Strategic Questions for Assessment:**
+1. Does this help us build better agents?
+2. Does this help us scale the platform?
+3. Does this help us acquire/retain customers?
+4. Does this apply to the meta-pivot (transferable to other verticals)?
+5. Does this help us partner with Optimizely or agencies?
+
+**Context Sync**: The `generate-article-assessment.py` script automatically imports the latest strategic context from the Pivot project with graceful fallback to legacy context if unavailable.
 
 ### Why Python Scripts vs Claude Code
 
@@ -246,6 +299,144 @@ Root (0ALLCxnOLmj3bUk9PVA)
 - Integration work (Drive uploads, JIRA updates)
 
 **Best approach:** Python for initial processing, Claude for strategic analysis and synthesis.
+
+## Feedback Loop System (Added October 30, 2025)
+
+Systematic feedback capture and analysis to enable continuous improvement and autonomous agent operation.
+
+### Overview
+
+The feedback loop tracks assessment accuracy, audio quality, and action outcomes to identify patterns and improve the article review process over time.
+
+**Key Components:**
+- **Feedback Log**: `/Users/bgerby/Documents/dev/ai/feedback/article-feedback-log.jsonl`
+- **Recording Tool**: `scripts/record-feedback.py`
+- **Analysis Tool**: `scripts/analyze-feedback.py`
+- **Reports**: `feedback/reports/`
+
+### Recording Feedback
+
+**Priority Corrections** (validate HIGH priority articles):
+```bash
+# Confirm correct priority
+python3 scripts/record-feedback.py GAT-482 correct "Direct MCP relevance confirmed"
+
+# Article over-rated (should be lower)
+python3 scripts/record-feedback.py GAT-484 too-high "LocalStorage too niche for current priorities"
+
+# Article under-rated (should be higher)
+python3 scripts/record-feedback.py GAT-485 too-low "Actually very relevant to SaaS platform strategy"
+```
+
+**Quality Ratings** (audio and content value):
+```bash
+# Record listening experience
+python3 scripts/record-feedback.py GAT-482 quality \
+    --audio-rating 5 \
+    --content-rating 5 \
+    --listened \
+    --completion 1.0
+```
+
+**Action Outcomes** (track completed items):
+```bash
+# Record action items completed
+python3 scripts/record-feedback.py GAT-482 action \
+    --completed "Research LangGraph" \
+    --completed "Review subagent patterns"
+```
+
+### Analyzing Feedback
+
+**Generate Reports:**
+```bash
+# Weekly summary (default)
+python3 scripts/analyze-feedback.py --period week
+
+# Monthly analysis
+python3 scripts/analyze-feedback.py --period month
+
+# Save to file
+python3 scripts/analyze-feedback.py --period week \
+    --output feedback/reports/2025-10-30-weekly-summary.md
+```
+
+**Report Includes:**
+- Priority accuracy metrics (target: 90%+)
+- Audio quality and content value ratings
+- Action item completion tracking
+- Systematic pattern detection
+- Improvement recommendations
+
+### Daily Validation Loop (5-10 minutes)
+
+**Recommended workflow after Step 4 (Assessment Generated):**
+
+1. Open assessment markdown file
+2. Review each HIGH priority article summary
+3. For obvious mis-classifications, record feedback:
+   ```bash
+   python3 scripts/record-feedback.py GAT-XXX too-high "Reason"
+   ```
+4. Spot-check 2-3 MEDIUM/LOW articles for surprises
+
+**Target:** Validate 100% of HIGH priority, 20% sample of MEDIUM/LOW
+
+### Weekly Review (10-15 minutes)
+
+1. Generate weekly feedback report
+2. Review Medium recommendations (`outputs/medium-recommendations-YYYY-MM-DD.txt`)
+3. Implement follow/mute actions based on patterns
+4. Track recommendation effectiveness
+
+### JIRA Integration
+
+Feedback recording automatically adds labels to tickets:
+- `priority:correct` - AI prediction validated
+- `priority:too-high` - Article over-rated
+- `priority:too-low` - Article under-rated
+
+Query via JIRA:
+```bash
+# Find all misclassifications
+jira issue list -p GAT -l "priority:too-high OR priority:too-low" --plain
+
+# Find validated HIGH priority articles
+jira issue list -p GAT -l "priority:correct" --plain
+```
+
+### Path to Autonomous Operation
+
+**Phase 1 (Weeks 1-4):** Collect baseline feedback (100+ validations)
+**Phase 2 (Weeks 5-8):** Identify patterns, build confidence scoring
+**Phase 3 (Weeks 9-12):** Implement auto-corrections for high-confidence patterns
+**Phase 4 (Weeks 13-16):** Reduce human validation to 2-3 min/day (exception-only)
+
+**Success Metrics:**
+- Priority accuracy: 90%+ agreement with human validation
+- Validation time: < 10 minutes/day
+- Human intervention: < 5% of articles need manual review
+
+### Fixing Missing PDF Links
+
+If you discover tickets without PDF links (created before October 30, 2025), use the helper script:
+
+```bash
+# Audit only (see what's missing)
+python3 scripts/fix-missing-pdf-links.py --dry-run
+
+# Fix all missing PDF links
+python3 scripts/fix-missing-pdf-links.py
+
+# Fix specific date range
+python3 scripts/fix-missing-pdf-links.py --start-date 2025-10-25 --end-date 2025-10-29
+```
+
+**What it does:**
+1. Finds JIRA tickets missing PDF links
+2. Searches for corresponding PDFs in pdfs/ directory
+3. Uploads PDFs to Google Drive
+4. Updates JIRA ticket descriptions with PDF links
 
 ## Optimizely World Monitoring
 
@@ -343,6 +534,86 @@ python3 scripts/scrape-optimizely-history.py --dry-run
 2. Capture PDFs (if not using `--upload-pdfs`)
 3. Generate assessment
 4. Generate audio → **automatically uploads to Drive + updates JIRA** ✨
+
+## Workflow Improvements (October 30, 2025)
+
+### 🎯 Assessment Visibility in JIRA Tickets
+
+**Problem Solved:** Without assessments visible in JIRA, it was unclear why LOW priority articles had no audio files.
+
+**Solution Implemented:**
+- Modified `generate-audio-from-assessment.py` to add assessments to ALL ticket descriptions (not just HIGH/MEDIUM)
+- Two-phase processing:
+  1. **Phase 1**: Update JIRA descriptions with assessments for ALL articles
+  2. **Phase 2**: Generate audio only for HIGH/MEDIUM priority articles
+
+**Key Changes:**
+
+1. **New Function: `build_jira_description()`** (line 416-471)
+   - Builds complete JIRA description with:
+     - Article URL, PDF link, Audio link (if exists)
+     - Full assessment (relevance, key insights, strategic implications, action items, topics)
+     - Priority with visual stars (⭐⭐⭐⭐⭐ HIGH, ⭐⭐⭐ MEDIUM, ⭐ LOW)
+     - Special note for LOW priority: "No audio file generated (only HIGH/MEDIUM priority articles receive audio)"
+
+2. **New Function: `update_jira_with_assessment()`** (line 468-525)
+   - Replaces old `update_jira_with_audio_link()` function
+   - Fetches current ticket to preserve PDF link
+   - Updates description using `-b` flag directly (avoids JIRA CLI comment hang bug)
+   - Works for both assessment-only (Phase 1) and assessment+audio (Phase 2)
+
+3. **Process ALL Articles** (line 150-207)
+   - Removed priority filter that skipped LOW priority articles
+   - Extracts complete assessment data for all articles
+   - Stores: relevance, key insights, strategic implications, action items, topics, author, published date
+
+4. **Two-Phase Main Loop** (line 665-693)
+   - Phase 1: Update ALL tickets with assessments
+   - Phase 2: Generate audio only for HIGH/MEDIUM articles
+   - When audio uploaded, re-update JIRA with audio link
+
+**Benefits:**
+- ✅ All articles have visible assessments in JIRA (including LOW priority)
+- ✅ Clear explanation of why no audio exists for LOW priority
+- ✅ No JIRA CLI comment hangs (using descriptions instead)
+- ✅ Consistent format across all tickets
+- ✅ Easier to understand article relevance at a glance
+
+**JIRA CLI Best Practices (Updated):**
+- **Avoid comments**: Comment command has stdin bug causing hangs (jira-cli v1.7.0 issues #641, #727)
+- **Use descriptions**: Always put assessments in ticket descriptions using `-b` flag
+- **Pattern**: `jira issue edit TICKET -b "description text" --no-input`
+- **No temp files needed**: Pass description directly as string parameter
+
+**Example Ticket Format:**
+```
+Medium Article Review
+
+**Article URL:** https://...
+**PDF:** https://drive.google.com/...
+**Audio:** https://drive.google.com/... (only if HIGH/MEDIUM)
+
+---
+
+# Assessment (AUTO-GENERATED)
+
+**Priority:** LOW ⭐
+**Note:** No audio file generated (only HIGH/MEDIUM priority articles receive audio)
+
+**Relevance Summary:**
+[Assessment content...]
+
+**Key Insights:**
+- [Bullet points...]
+
+**Strategic Implications:**
+- [Bullet points...]
+
+**Action Items:**
+- [Bullet points...]
+
+**Topics:** topic1, topic2, topic3
+```
 
 ## Combined Daily Process
 

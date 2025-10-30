@@ -33,6 +33,9 @@ def extract_text_from_pdf(pdf_path):
 
 def clean_text_for_speech(text):
     """Clean text to make it better for text-to-speech."""
+    # Remove "Open in app" header (appears at top of Medium PDFs)
+    text = re.sub(r'^Open in app\s*\n?', '', text, flags=re.IGNORECASE | re.MULTILINE)
+
     # Remove login/account UI elements
     text = re.sub(r'Welcome back\. You are signed into your member account.*?Not you\?', '', text, flags=re.DOTALL)
     text = re.sub(r'bg••••@jaxondigital\.com', '', text)
@@ -49,14 +52,17 @@ def clean_text_for_speech(text):
     # IMPROVED: Crop at footer sections (Topics, Author bio, Recommendations)
     # Find earliest occurrence of footer patterns and truncate there
     footer_patterns = [
-        r'\n\s*Topics\s*\n',                    # "Topics" section header
+        r'\n\s*Topics\s*\n',                    # "Topics" section header (explicit)
         r'\n\s*Topics\s*$',                     # "Topics" at end of line
-        r'\n\s*See all from\s+\w+',            # "See all from [Author]"
-        r'\n\s*Recommended from Medium',        # Medium recommendations section
-        r'\n\s*More from\s+\w+',               # "More from [Publication]"
-        r'\n\s*\d+\s+responses?\s*\n',         # Response count (e.g., "12 responses")
-        r'\n\s*Written by\s*\n',               # Author byline section
-        r'\n\s*--\s*\n',                       # Horizontal rule often precedes footer
+        r'\nSee you next time!?\s*\n',          # Common author sign-off
+        r'\nReferences\s*\n',                   # References section (often before topics)
+        r'[\n\f]Written by\s+[\w\s]+\n',        # "Written by [Name]" (may have form feed)
+        r'\n(?:No )?[Rr]esponses?\s*\(',        # "Responses (12)" or "No responses yet"
+        r'\nSee all from\s+[\w\s]+\n',          # "See all from [Author]"
+        r'\nRecommended from Medium',           # Medium recommendations section
+        r'\nMore from\s+[\w\s]+\n',             # "More from [Publication]"
+        r'\n\s*--\s*\n',                        # Horizontal rule often precedes footer
+        r'\nIf you (?:like|enjoyed).*(?:comment|share|clap)', # Call-to-action at end
     ]
 
     earliest_footer_pos = len(text)
@@ -145,22 +151,37 @@ def parse_assessment(assessment_path, metadata_path=None):
         priority_match = re.search(r'\*\*Priority:\*\*\s+(HIGH|MEDIUM|LOW)', section_content)
         priority = priority_match.group(1) if priority_match else "UNKNOWN"
 
-        # Only include HIGH and MEDIUM priority articles
-        if priority not in ['HIGH', 'MEDIUM']:
-            continue
-
-        # Extract relevance summary and strategic implications for executive summary
+        # Extract all assessment fields
         relevance_match = re.search(r'\*\*Relevance Summary:\*\*\s*(.+?)(?=\n\*\*|$)', section_content, re.DOTALL)
         relevance = relevance_match.group(1).strip() if relevance_match else ""
 
-        # Extract action items
+        key_insights_match = re.search(r'\*\*Key Insights:\*\*\s*(.+?)(?=\n\*\*|$)', section_content, re.DOTALL)
+        key_insights = key_insights_match.group(1).strip() if key_insights_match else ""
+
+        strategic_match = re.search(r'\*\*Strategic Implications:\*\*\s*(.+?)(?=\n\*\*|$)', section_content, re.DOTALL)
+        strategic_implications = strategic_match.group(1).strip() if strategic_match else ""
+
         action_items_match = re.search(r'\*\*Action Items:\*\*\s*(.+?)(?=\n\*\*|###|$)', section_content, re.DOTALL)
         action_items = action_items_match.group(1).strip() if action_items_match else ""
 
-        # Build executive summary from relevance and action items
+        topics_match = re.search(r'\*\*Topics:\*\*\s*(.+?)(?=\n\*\*|###|$)', section_content, re.DOTALL)
+        topics = topics_match.group(1).strip() if topics_match else ""
+
+        # Extract author and published date
+        author_match = re.search(r'\*\*Author:\*\*\s*(.+?)(?=\n|$)', section_content)
+        author = author_match.group(1).strip() if author_match else "Unknown"
+
+        published_match = re.search(r'\*\*Published:\*\*\s*(.+?)(?=\n|$)', section_content)
+        published = published_match.group(1).strip() if published_match else "Unknown"
+
+        # Extract article URL
+        url_match = re.search(r'\*\*Article URL:\*\*\s+(https?://[^\s]+)', section_content)
+        article_url = url_match.group(1) if url_match else "Unknown"
+
+        # Build executive summary from relevance and action items (for audio intro)
         executive_summary = (
             f"{title}. "
-            f"Rated as HIGH priority. {relevance} "
+            f"Rated as {priority} priority. {relevance} "
             f"{action_items}"
             "\n\nNow, here's the full article.\n\n"
         )
@@ -172,8 +193,16 @@ def parse_assessment(assessment_path, metadata_path=None):
             'number': article_num,
             'title': title,
             'ticket_id': ticket_id,
-            'executive_summary': executive_summary,
-            'priority': priority
+            'priority': priority,
+            'article_url': article_url,
+            'author': author,
+            'published': published,
+            'relevance_summary': relevance,
+            'key_insights': key_insights,
+            'strategic_implications': strategic_implications,
+            'action_items': action_items,
+            'topics': topics,
+            'executive_summary': executive_summary,  # For audio intro
         }
 
     return articles
@@ -271,13 +300,17 @@ def generate_audio_openai(text, output_path):
         traceback.print_exc()
         return False
 
-def add_metadata(audio_path, title, gat_number, author="Medium Author"):
+def add_metadata(audio_path, title, gat_number, description="High Priority Article", author="Medium Author"):
     """Add ID3 metadata to audio file."""
     try:
         final_mp3 = audio_path.parent / f"{gat_number}.mp3"
 
         display_title = f"{gat_number.replace('GAT-', '')} - {title}"
         album_name = display_title
+
+        # Truncate description if too long (RSS readers typically limit to ~200 chars)
+        if len(description) > 200:
+            description = description[:197] + "..."
 
         subprocess.run([
             'ffmpeg', '-i', str(audio_path),
@@ -288,7 +321,7 @@ def add_metadata(audio_path, title, gat_number, author="Medium Author"):
             '-metadata', f'artist={author}',
             '-metadata', 'album_artist=Medium Articles',
             '-metadata', 'track=1',
-            '-metadata', 'comment=High Priority Article',
+            '-metadata', f'comment={description}',
             '-metadata', 'genre=Podcast',
             '-y',
             str(final_mp3)
@@ -380,8 +413,110 @@ def upload_audio_to_drive(audio_path, mp3_folder_id="1NB1a1jGrqTmXvSw8CVQAsi_j05
         print(f"  ✗ Error uploading to Drive: {e}")
         return None
 
+def build_jira_description(article, pdf_link=None, audio_link=None):
+    """Build complete JIRA description with assessment."""
+    source = "Optimizely World Blog" if "world.optimizely.com" in article['article_url'] else "Medium"
+
+    # Build header with links
+    description = f"{source} Article Review\n\n"
+    description += f"**Article URL:** {article['article_url']}\n"
+
+    if pdf_link:
+        description += f"**PDF:** {pdf_link}\n"
+
+    if audio_link:
+        description += f"**Audio:** {audio_link}\n"
+
+    # Add assessment section
+    description += "\n---\n\n"
+    description += "# Assessment (AUTO-GENERATED)\n\n"
+
+    # Determine priority stars
+    if article['priority'] == 'HIGH':
+        priority_stars = '⭐⭐⭐⭐⭐'
+    elif article['priority'] == 'MEDIUM':
+        priority_stars = '⭐⭐⭐'
+    else:
+        priority_stars = '⭐'
+
+    description += f"**Priority:** {article['priority']} {priority_stars}\n"
+
+    # Add note for LOW priority (no audio)
+    if article['priority'] == 'LOW':
+        description += "**Note:** No audio file generated (only HIGH/MEDIUM priority articles receive audio)\n"
+
+    description += "\n"
+
+    # Add assessment fields
+    if article.get('relevance_summary'):
+        description += f"**Relevance Summary:**\n{article['relevance_summary']}\n\n"
+
+    if article.get('key_insights'):
+        description += f"**Key Insights:**\n{article['key_insights']}\n\n"
+
+    if article.get('strategic_implications'):
+        description += f"**Strategic Implications:**\n{article['strategic_implications']}\n\n"
+
+    if article.get('action_items'):
+        description += f"**Action Items:**\n{article['action_items']}\n\n"
+
+    if article.get('topics'):
+        description += f"**Topics:** {article['topics']}\n"
+
+    return description
+
+def update_jira_with_assessment(ticket_id, article, audio_link=None):
+    """Update JIRA ticket description with complete assessment."""
+    try:
+        jira_token_file = os.path.expanduser("~/.jira.d/.pass")
+        if not os.path.exists(jira_token_file):
+            print(f"  ✗ JIRA token not found")
+            return False
+
+        with open(jira_token_file, 'r') as f:
+            jira_token = f.read().strip()
+
+        env = os.environ.copy()
+        env['JIRA_API_TOKEN'] = jira_token
+
+        # Get current ticket to extract PDF link
+        result = subprocess.run(
+            ['jira', 'issue', 'view', ticket_id],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=env
+        )
+
+        pdf_link = None
+        if result.returncode == 0:
+            # Extract existing PDF link
+            pdf_match = re.search(r'\*\*PDF:\*\*\s+(https?://[^\s]+)', result.stdout)
+            if pdf_match:
+                pdf_link = pdf_match.group(1)
+
+        # Build complete description with assessment
+        new_description = build_jira_description(article, pdf_link=pdf_link, audio_link=audio_link)
+
+        # Update ticket using -b flag directly with description
+        result = subprocess.run(
+            ['jira', 'issue', 'edit', ticket_id, '-b', new_description, '--no-input'],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=env
+        )
+
+        return result.returncode == 0
+
+    except Exception as e:
+        print(f"  ✗ Error updating JIRA: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
 def update_jira_with_audio_link(ticket_id, audio_link):
-    """Update JIRA ticket description to include audio link."""
+    """Update JIRA ticket description to include audio link (DEPRECATED - use update_jira_with_assessment)."""
     try:
         jira_token_file = os.path.expanduser("~/.jira.d/.pass")
         if not os.path.exists(jira_token_file):
@@ -515,12 +650,36 @@ def main():
     # Parse assessment
     print("Parsing assessment...")
     articles = parse_assessment(assessment_path, metadata_path)
-    print(f"Found {len(articles)} HIGH/MEDIUM priority articles")
+    print(f"Found {len(articles)} articles")
+    print()
+
+    # PHASE 1: Update JIRA tickets with assessments for ALL articles
+    print("=" * 50)
+    print("PHASE 1: Updating JIRA tickets with assessments")
+    print("=" * 50)
+    print()
+
+    for article_num, article in sorted(articles.items()):
+        print(f"\nArticle {article_num}: {article['title']} [{article['priority']}]")
+        print(f"Ticket: {article['ticket_id']}")
+
+        # Update JIRA with assessment (no audio link yet)
+        print(f"  Updating JIRA with assessment...")
+        if update_jira_with_assessment(article['ticket_id'], article, audio_link=None):
+            print(f"  ✓ JIRA ticket updated with assessment")
+        else:
+            print(f"  ✗ JIRA update failed")
+
+    # PHASE 2: Generate audio for HIGH/MEDIUM priority articles
+    high_medium_articles = {k: v for k, v in articles.items() if v['priority'] in ['HIGH', 'MEDIUM']}
+    print(f"\n{'=' * 50}")
+    print(f"PHASE 2: Generating audio for {len(high_medium_articles)} HIGH/MEDIUM priority articles")
+    print("=" * 50)
     print()
 
     results = []
 
-    for article_num, article in sorted(articles.items()):
+    for article_num, article in sorted(high_medium_articles.items()):
         print(f"\nProcessing Article {article_num}: {article['title']}")
         print(f"Ticket: {article['ticket_id']}")
 
@@ -578,7 +737,7 @@ def main():
 
         # Add metadata
         print(f"  Adding metadata...")
-        final_mp3 = add_metadata(temp_audio, article['title'], article['ticket_id'])
+        final_mp3 = add_metadata(temp_audio, article['title'], article['ticket_id'], article['relevance_summary'])
 
         if not final_mp3:
             print(f"  ✗ Metadata addition failed")
@@ -619,10 +778,10 @@ def main():
                 except Exception as e:
                     print(f"  ⚠ Failed to update drive-urls.json: {e}")
 
-            # Update JIRA ticket with audio link
-            print(f"  Updating JIRA ticket {article['ticket_id']}...")
-            if update_jira_with_audio_link(article['ticket_id'], audio_drive_link):
-                print(f"  ✓ JIRA ticket updated")
+            # Update JIRA ticket with audio link (re-update with assessment + audio)
+            print(f"  Updating JIRA ticket {article['ticket_id']} with audio link...")
+            if update_jira_with_assessment(article['ticket_id'], article, audio_link=audio_drive_link):
+                print(f"  ✓ JIRA ticket updated with audio link")
                 results.append({
                     'ticket_id': article['ticket_id'],
                     'audio_path': str(final_mp3),
