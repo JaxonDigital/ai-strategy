@@ -26,6 +26,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from email.utils import parsedate_to_datetime
+from pathlib import Path
 
 # JIRA configuration
 JIRA_PROJECT = "GAT"
@@ -166,6 +167,150 @@ def check_existing_ticket_by_url(article_url, state):
     return (None, False)
 
 
+def get_drive_service():
+    """Get Google Drive API service using token from MCP server."""
+    try:
+        from google.oauth2.credentials import Credentials
+        from googleapiclient.discovery import build
+        from google.auth.transport.requests import Request
+    except ImportError:
+        print("  ⚠ Google API libraries not available. Install with: pip3 install google-api-python-client google-auth-httplib2 google-auth-oauthlib")
+        return None
+
+    token_path = '/Users/bgerby/Documents/dev/ai/mcp-googledocs-server/token.json'
+
+    if not os.path.exists(token_path):
+        print(f"  ⚠ Google Drive token not found at {token_path}")
+        return None
+
+    with open(token_path, 'r') as f:
+        token_data = json.load(f)
+
+    creds = Credentials(
+        token=token_data.get('access_token'),
+        refresh_token=token_data.get('refresh_token'),
+        token_uri='https://oauth2.googleapis.com/token',
+        client_id=token_data.get('client_id'),
+        client_secret=token_data.get('client_secret')
+    )
+
+    # Refresh if needed
+    if creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+        # Update token file
+        token_data['access_token'] = creds.token
+        with open(token_path, 'w') as f:
+            json.dump(token_data, f)
+
+    return build('drive', 'v3', credentials=creds)
+
+def get_or_create_folder(service, folder_name, parent_id):
+    """Get folder ID or create it if it doesn't exist."""
+    # Search for existing folder
+    query = f"name='{folder_name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    results = service.files().list(
+        q=query,
+        spaces='drive',
+        fields='files(id, name)',
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True
+    ).execute()
+
+    folders = results.get('files', [])
+    if folders:
+        return folders[0]['id']
+
+    # Create folder
+    folder_metadata = {
+        'name': folder_name,
+        'mimeType': 'application/vnd.google-apps.folder',
+        'parents': [parent_id]
+    }
+    folder = service.files().create(
+        body=folder_metadata,
+        fields='id',
+        supportsAllDrives=True
+    ).execute()
+
+    return folder['id']
+
+def upload_pdf_to_drive(service, pdf_path, parent_folder_id):
+    """Upload PDF to Google Drive and return shareable link."""
+    from googleapiclient.http import MediaFileUpload
+
+    file_name = os.path.basename(pdf_path)
+    file_metadata = {
+        'name': file_name,
+        'parents': [parent_folder_id]
+    }
+
+    media = MediaFileUpload(pdf_path, resumable=True)
+    file = service.files().create(
+        body=file_metadata,
+        media_body=media,
+        fields='id',
+        supportsAllDrives=True
+    ).execute()
+
+    file_id = file['id']
+
+    # Make publicly accessible
+    permission = {
+        'type': 'anyone',
+        'role': 'reader'
+    }
+    service.permissions().create(
+        fileId=file_id,
+        body=permission,
+        supportsAllDrives=True
+    ).execute()
+
+    # Get shareable link
+    file = service.files().get(
+        fileId=file_id,
+        fields='webViewLink',
+        supportsAllDrives=True
+    ).execute()
+
+    return file['webViewLink']
+
+def update_jira_with_pdf_link(ticket_id, article_url, pdf_link):
+    """Update JIRA ticket description to include PDF link."""
+    try:
+        if not os.path.exists(JIRA_TOKEN_FILE):
+            print(f"  ✗ JIRA token not found")
+            return False
+
+        with open(JIRA_TOKEN_FILE, 'r') as f:
+            jira_token = f.read().strip()
+
+        env = os.environ.copy()
+        env['JIRA_API_TOKEN'] = jira_token
+
+        # Build updated description
+        new_description = f"""Optimizely World Blog Article
+
+**Article URL:** {article_url}
+**PDF:** {pdf_link}
+**Source:** Optimizely World Blog (world.optimizely.com)
+
+To be reviewed for relevance to Jaxon Digital's AI agent initiatives and Optimizely platform strategy."""
+
+        # Update ticket
+        result = subprocess.run(
+            ['jira', 'issue', 'edit', ticket_id, '-b', new_description, '--no-input'],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=env
+        )
+
+        return result.returncode == 0
+
+    except Exception as e:
+        print(f"  ✗ Error updating JIRA: {e}")
+        return False
+
 def create_jira_ticket_direct(article, dry_run=False):
     """
     Create a JIRA ticket directly using jira CLI.
@@ -251,6 +396,29 @@ To be reviewed for relevance to Jaxon Digital's AI agent initiatives and Optimiz
             os.remove(temp_file)
 
 
+def find_matching_pdf(article, pdf_dir, article_num):
+    """Find matching PDF file for article."""
+    pdf_dir_path = Path(pdf_dir)
+
+    if not pdf_dir_path.exists():
+        return None
+
+    # Try different naming patterns:
+    # 1. Sequential number: 01-article-title.pdf, 09-article-title.pdf
+    # 2. Ticket ID: GAT-XXX-article-title.pdf
+
+    patterns = [
+        f"{article_num:02d}-*.pdf",  # e.g., 01-article.pdf
+        f"*{article_num:02d}*.pdf",  # e.g., article-01.pdf
+    ]
+
+    for pattern in patterns:
+        matching_pdfs = list(pdf_dir_path.glob(pattern))
+        if matching_pdfs:
+            return str(matching_pdfs[0])
+
+    return None
+
 def main():
     parser = argparse.ArgumentParser(
         description='Monitor Optimizely World blog RSS feed and auto-create JIRA tickets'
@@ -261,6 +429,8 @@ def main():
                         help='Show what would be done without actually creating tickets')
     parser.add_argument('--output-json', type=str,
                         help='Output JSON file with article metadata')
+    parser.add_argument('--upload-pdfs', type=str,
+                        help='Upload PDFs from specified directory to Google Drive and update tickets')
 
     args = parser.parse_args()
 
@@ -351,6 +521,42 @@ def main():
                 if 'url_to_ticket' not in state:
                     state['url_to_ticket'] = {}
                 state['url_to_ticket'][article['url']] = ticket_id
+
+                # Upload PDF if --upload-pdfs flag provided
+                if args.upload_pdfs:
+                    pdf_path = find_matching_pdf(article, args.upload_pdfs, i)
+                    if pdf_path:
+                        try:
+                            print(f"  → Uploading PDF to Drive...")
+                            drive_service = get_drive_service()
+                            if drive_service:
+                                # Create folder structure: Year/Month/Day/PDFs
+                                SHARED_DRIVE_ID = '0ALLCxnOLmj3bUk9PVA'
+                                date_obj = datetime.now()
+                                year = date_obj.strftime('%Y')
+                                month = date_obj.strftime('%m-%B')
+                                day = date_obj.strftime('%d')
+
+                                year_folder = get_or_create_folder(drive_service, year, SHARED_DRIVE_ID)
+                                month_folder = get_or_create_folder(drive_service, month, year_folder)
+                                day_folder = get_or_create_folder(drive_service, day, month_folder)
+                                pdfs_folder = get_or_create_folder(drive_service, 'PDFs', day_folder)
+
+                                # Upload PDF
+                                pdf_link = upload_pdf_to_drive(drive_service, pdf_path, pdfs_folder)
+                                print(f"  ✓ Uploaded: {pdf_link}")
+
+                                # Update JIRA with PDF link
+                                print(f"  → Updating JIRA with PDF link...")
+                                if update_jira_with_pdf_link(ticket_id, article['url'], pdf_link):
+                                    print(f"  ✓ JIRA updated")
+                                    created_tickets[article['guid']]['pdf_link'] = pdf_link
+                                else:
+                                    print(f"  ⚠ JIRA update failed")
+                        except Exception as e:
+                            print(f"  ⚠ PDF upload failed: {e}")
+                    else:
+                        print(f"  ⚠ No PDF found for article")
 
         else:
             print(f"  ✗ Failed to create ticket")

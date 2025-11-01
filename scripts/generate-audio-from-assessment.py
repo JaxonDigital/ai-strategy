@@ -16,6 +16,7 @@ import re
 import subprocess
 import json
 from pathlib import Path
+from datetime import datetime
 
 def extract_text_from_pdf(pdf_path):
     """Extract text from PDF using pdftotext."""
@@ -366,12 +367,80 @@ def get_drive_service():
 
     return build('drive', 'v3', credentials=creds)
 
-def upload_audio_to_drive(audio_path, mp3_folder_id="1NB1a1jGrqTmXvSw8CVQAsi_j05DCBg59"):
-    """Upload audio file to Google Drive and return shareable link."""
+def get_or_create_mp3_folder(service, year: str, month: str, day: str) -> str:
+    """Get or create Drive folder structure: 2025/10-October/29/MP3s/"""
+    SHARED_DRIVE_ROOT = '0ALLCxnOLmj3bUk9PVA'
+    parent_id = SHARED_DRIVE_ROOT
+
+    # Navigate folder structure
+    month_name = datetime.strptime(month, '%m').strftime('%B')
+    folder_path = [
+        (year, year),
+        (f'{month}-{month_name}', f'{month}-{month_name}'),
+        (day, day),
+        ('MP3s', 'MP3s')
+    ]
+
+    for folder_display, search_name in folder_path:
+        # Search for folder
+        query = f"name='{search_name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
+
+        results = service.files().list(
+            q=query,
+            spaces='drive',
+            fields='files(id, name)',
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
+            corpora='drive',
+            driveId=SHARED_DRIVE_ROOT
+        ).execute()
+
+        folders = results.get('files', [])
+
+        if folders:
+            parent_id = folders[0]['id']
+        else:
+            # Create folder
+            file_metadata = {
+                'name': search_name,
+                'mimeType': 'application/vnd.google-apps.folder',
+                'parents': [parent_id]
+            }
+
+            folder = service.files().create(
+                body=file_metadata,
+                fields='id',
+                supportsAllDrives=True
+            ).execute()
+
+            parent_id = folder['id']
+
+    return parent_id
+
+def upload_audio_to_drive(audio_path, review_date: str = None):
+    """Upload audio file to Google Drive and return shareable link.
+
+    Args:
+        audio_path: Path to the audio file
+        review_date: Date string in YYYY-MM-DD format (e.g., "2025-10-31")
+                    If not provided, uses today's date
+    """
     from googleapiclient.http import MediaFileUpload
 
     try:
         service = get_drive_service()
+
+        # Parse review date and get/create date-specific MP3 folder
+        if review_date:
+            date_obj = datetime.strptime(review_date, '%Y-%m-%d')
+        else:
+            date_obj = datetime.now()
+
+        year = date_obj.strftime('%Y')
+        month = date_obj.strftime('%m')
+        day = date_obj.strftime('%d')
+
+        mp3_folder_id = get_or_create_mp3_folder(service, year, month, day)
 
         file_name = os.path.basename(audio_path)
         file_metadata = {
@@ -605,18 +674,21 @@ def main():
     assessment_path = Path(sys.argv[2])
     output_dir = Path("/Users/bgerby/Documents/dev/ai/audio-reviews")
 
+    # Extract review date from assessment filename for proper Drive folder organization
+    # (e.g., medium-articles-relevance-assessment-2025-10-28.md)
+    assessment_filename = assessment_path.name
+    date_match = re.search(r'(\d{4}-\d{2}-\d{2})', assessment_filename)
+    review_date = date_match.group(1) if date_match else None
+
     # Optional metadata path for ticket ID mapping
     metadata_path = None
     if len(sys.argv) > 3:
         metadata_path = sys.argv[3]
     else:
         # Try to find metadata JSON automatically in /tmp/
-        # Extract date from assessment filename (e.g., medium-articles-relevance-assessment-2025-10-28.md)
         import glob
-        assessment_filename = assessment_path.name
-        date_match = re.search(r'(\d{4}-\d{2}-\d{2})', assessment_filename)
-        if date_match:
-            date_str = date_match.group(1)
+        if review_date:
+            date_str = review_date
             # Try both with and without year prefix
             potential_patterns = [
                 f'/tmp/medium-articles-{date_str}.json',
@@ -747,7 +819,7 @@ def main():
 
         # Upload to Google Drive
         print(f"  Uploading to Google Drive...")
-        audio_drive_link = upload_audio_to_drive(final_mp3)
+        audio_drive_link = upload_audio_to_drive(final_mp3, review_date)
 
         if audio_drive_link:
             print(f"  ✓ Uploaded: {audio_drive_link}")

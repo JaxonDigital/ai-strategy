@@ -101,7 +101,56 @@ Daily process for reviewing Medium articles and Optimizely World blog posts, tra
 
 **⚠️ IMPORTANT CHANGE (October 30, 2025):** PDF links are now **MANDATORY** in JIRA tickets. Always capture PDFs BEFORE creating tickets.
 
-### Quick Start Commands
+### 🆕 Combined Workflow (Recommended - November 2025)
+
+**NEW: Process all sources with one command!**
+
+```bash
+# Daily workflow - ALL THREE SOURCES in one go
+python3 scripts/monitor-all-news-sources.py \
+    --medium-email ~/Desktop/MM-DD.eml \
+    --medium-pdfs ~/Desktop/medium-articles-YYYY-MM-DD/ \
+    --optimizely-pdfs ~/Desktop/optimizely-articles-YYYY-MM-DD/ \
+    --anthropic-pdfs ~/Desktop/anthropic-news-YYYY-MM-DD/
+
+# ✨ This automatically:
+#   1. Extracts Medium articles from email
+#   2. Checks Optimizely RSS for new articles
+#   3. Processes Anthropic news (if scraped JSON provided)
+#   4. Uploads ALL PDFs to Google Drive
+#   5. Creates JIRA tickets with PDF links
+#   6. Generates UNIFIED assessment for all sources
+#   7. Generates audio for HIGH priority articles
+#   8. Updates JIRA with assessments and audio links
+#   9. Publishes RSS podcast feed
+```
+
+**Prerequisites:**
+1. **Capture PDFs first** (via Claude Code + Playwright MCP):
+   - Medium: Save paywall articles (login required)
+   - Optimizely: Save from world.optimizely.com/blogs
+   - Anthropic: Save from anthropic.com/news (no RSS, requires scraping)
+
+2. **Anthropic scraping** (separate step, no RSS available):
+   ```bash
+   # Ask Claude Code to scrape Anthropic news:
+   # "Navigate to https://www.anthropic.com/news and extract article data to JSON"
+   # Output: /tmp/anthropic-news-YYYY-MM-DD.json
+
+   # Then process with:
+   python3 scripts/monitor-all-news-sources.py \
+       --anthropic-scraped-json /tmp/anthropic-news-YYYY-MM-DD.json \
+       --anthropic-pdfs ~/Desktop/anthropic-news-YYYY-MM-DD/
+   ```
+
+**Benefits:**
+- ✅ Single command for entire workflow
+- ✅ Unified assessment across all sources
+- ✅ No manual JIRA/Drive updates needed
+- ✅ Consistent priority scoring
+- ✅ Automatic podcast feed updates
+
+### Quick Start Commands (Legacy - Individual Sources)
 
 **Medium Articles:**
 ```bash
@@ -113,10 +162,11 @@ Daily process for reviewing Medium articles and Optimizely World blog posts, tra
 # - Save to: ~/Desktop/medium-articles-YYYY-MM-DD/
 
 # Step 2: Extract from email AND upload PDFs (combined step)
+# ⚠️ NOTE: Email files stored in: /Users/bgerby/Documents/dev/ai/inputs/MM-DD.eml
 python3 scripts/extract-medium-articles.py \
-    ~/Desktop/MM-DD.eml \
+    /Users/bgerby/Documents/dev/ai/inputs/MM-DD.eml \
     --create-tickets \
-    --upload-to-drive ~/Desktop/medium-articles-YYYY-MM-DD/ \
+    --upload-to-drive pdfs/medium-articles-YYYY-MM-DD/ \
     --output-json /tmp/medium-articles.json
 
 # ✓ This automatically:
@@ -228,7 +278,9 @@ Root (0ALLCxnOLmj3bUk9PVA)
 - `upload-audio-to-drive.py` - Upload MP3s to Drive
 
 **Repository scripts** (`/Users/bgerby/Documents/dev/ai/scripts/`):
+- `monitor-all-news-sources.py` - **🆕 UNIFIED processor for all sources (RECOMMENDED)**
 - `monitor-optimizely-blog.py` - RSS monitoring + JIRA ticket creation
+- `anthropic-scraper.py` - **🆕 Anthropic news processing (no RSS, requires scraped JSON)**
 - `scrape-optimizely-history.py` - Historical backfill (optional)
 - `capture-optimizely-articles.py` - PDF capture helper
 
@@ -259,10 +311,15 @@ Root (0ALLCxnOLmj3bUk9PVA)
 **GitHub**: https://github.com/JaxonDigital/jaxon-research-feed
 
 **Features:**
-- Unified feed for all article reviews (Medium + Optimizely)
+- Unified feed for all article reviews (Medium + Optimizely + Anthropic)
 - Automatic played/unplayed tracking
 - Sequential playback in podcast apps
 - HIGH priority articles only
+
+**Sources Monitored:**
+1. **Medium** - Daily digest email (requires manual subscription)
+2. **Optimizely World Blog** - RSS feed (automated monitoring)
+3. **Anthropic News** - Web scraping (no RSS available)
 
 ### Assessment Criteria (Updated for SaaS Pivot - October 2025)
 
@@ -464,6 +521,72 @@ python3 scripts/monitor-optimizely-blog.py --backfill
 # Option B: Full historical backfill (optional, 1163 pages, 100+ tickets)
 python3 scripts/scrape-optimizely-history.py --dry-run
 ```
+
+## Anthropic News Monitoring (🆕 November 2025)
+
+**Source**: `https://www.anthropic.com/news` (no RSS feed available, requires web scraping)
+**State File**: `~/.anthropic-news-state.json` (tracks seen articles, prevents duplicates)
+
+**Why Monitor Anthropic:**
+- Major Claude capability announcements (directly impacts MCP development)
+- API updates and new features
+- AI safety research and best practices
+- Strategic positioning insights
+
+**Workflow:**
+
+1. **Scrape articles** (via Claude Code + Playwright):
+   ```bash
+   # Ask Claude Code:
+   # "Navigate to https://www.anthropic.com/news and extract all article data to JSON"
+   # Save output: /tmp/anthropic-news-YYYY-MM-DD.json
+
+   # Expected JSON structure:
+   # {
+   #   "articles": [
+   #     {
+   #       "title": "Claude Sonnet 4.5 Announcement",
+   #       "url": "https://www.anthropic.com/news/...",
+   #       "date": "2025-09-29",
+   #       "category": "Product"
+   #     }
+   #   ]
+   # }
+   ```
+
+2. **Capture PDFs** (via Claude Code + Playwright):
+   ```bash
+   # For each article URL, save as PDF:
+   # ~/Desktop/anthropic-news-YYYY-MM-DD/01-article-title.pdf
+   ```
+
+3. **Process articles and create tickets**:
+   ```bash
+   python3 scripts/anthropic-scraper.py \
+       --input-json /tmp/anthropic-news-YYYY-MM-DD.json \
+       --output-json /tmp/anthropic-processed.json
+
+   # ✅ This creates JIRA tickets with "Anthropic" label
+   # ✅ Tracks seen articles in state file
+   # ✅ Skips duplicates automatically
+   ```
+
+4. **Or use combined workflow** (recommended):
+   ```bash
+   python3 scripts/monitor-all-news-sources.py \
+       --anthropic-scraped-json /tmp/anthropic-news-YYYY-MM-DD.json \
+       --anthropic-pdfs ~/Desktop/anthropic-news-YYYY-MM-DD/
+   ```
+
+**Limitations:**
+- **No RSS feed** - Requires manual scraping trigger
+- **Lower frequency** - Anthropic publishes less often than Medium/Optimizely
+- **Manual first step** - Must use Claude Code to scrape before processing
+
+**Priority Weighting:**
+- Anthropic news typically receives **HIGH** priority automatically
+- Strategic importance to MCP and agent development
+- Impacts product roadmap and competitive positioning
 
 ## Workflow Improvements (October 24, 2025)
 
