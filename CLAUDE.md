@@ -2,6 +2,21 @@
 
 This file provides guidance to Claude Code when working with this repository.
 
+## ⚠️ CRITICAL: Working Directory Policy
+
+**NEVER work from ~/Desktop or any other directory outside this repository.**
+
+- **Always work from**: `/Users/bgerby/Documents/dev/ai/`
+- All scripts expect to run from repository root
+- All relative paths assume repository root as working directory
+- Desktop is for temporary file storage only (PDFs before processing)
+
+**Correct workflow:**
+```bash
+cd /Users/bgerby/Documents/dev/ai  # Always start here
+python3 scripts/script-name.py     # Scripts run from repo root
+```
+
 ## Repository Purpose
 
 **Strategy and analysis repository** for Jaxon Digital's AI agent business initiatives. Contains strategic documents analyzing market opportunities, business models, and revenue strategies related to agentic AI and DXP platforms.
