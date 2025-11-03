@@ -5,9 +5,8 @@ Works with assessment markdown and numbered PDFs (01-article.pdf format).
 
 Usage:
     python3 generate-audio-from-assessment.py \\
-        /Users/bgerby/Desktop/medium-articles-2025-10-21 \\
-        /Users/bgerby/Desktop/medium-articles-relevance-assessment-2025-10-21.md \\
-        /Users/bgerby/Desktop/upload-to-drive-helper.py
+        /Users/bgerby/Documents/dev/ai/pdfs/medium-articles-2025-10-21 \\
+        /Users/bgerby/Documents/dev/ai/assessments/medium-articles-relevance-assessment-2025-10-21.md
 """
 
 import os

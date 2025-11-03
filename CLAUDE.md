@@ -9,13 +9,21 @@ This file provides guidance to Claude Code when working with this repository.
 - **Always work from**: `/Users/bgerby/Documents/dev/ai/`
 - All scripts expect to run from repository root
 - All relative paths assume repository root as working directory
-- Desktop is for temporary file storage only (PDFs before processing)
+- **PDF capture**: Save PDFs directly to `pdfs/` subdirectory (NOT Desktop)
+- **Email files**: Save to `inputs/` subdirectory (NOT Desktop)
+- **Assessments**: Generated in `assessments/` subdirectory
 
 **Correct workflow:**
 ```bash
 cd /Users/bgerby/Documents/dev/ai  # Always start here
 python3 scripts/script-name.py     # Scripts run from repo root
+
+# When capturing PDFs with Playwright:
+# Save to: pdfs/medium-articles-YYYY-MM-DD/01-article.pdf
+# NOT to: ~/Desktop/medium-articles-YYYY-MM-DD/01-article.pdf
 ```
+
+**⚠️ DEPRECATED (November 2025):** Using Desktop for workflow files is no longer supported. All historical Desktop references in documentation have been updated to use repository paths.
 
 ## Repository Purpose
 
@@ -123,10 +131,10 @@ Daily process for reviewing Medium articles and Optimizely World blog posts, tra
 ```bash
 # Daily workflow - ALL THREE SOURCES in one go
 python3 scripts/monitor-all-news-sources.py \
-    --medium-email ~/Desktop/MM-DD.eml \
-    --medium-pdfs ~/Desktop/medium-articles-YYYY-MM-DD/ \
-    --optimizely-pdfs ~/Desktop/optimizely-articles-YYYY-MM-DD/ \
-    --anthropic-pdfs ~/Desktop/anthropic-news-YYYY-MM-DD/
+    --medium-email inputs/MM-DD.eml \
+    --medium-pdfs pdfs/medium-articles-YYYY-MM-DD/ \
+    --optimizely-pdfs pdfs/optimizely-articles-YYYY-MM-DD/ \
+    --anthropic-pdfs pdfs/anthropic-news-YYYY-MM-DD/
 
 # ✨ This automatically:
 #   1. Extracts Medium articles from email
@@ -155,7 +163,7 @@ python3 scripts/monitor-all-news-sources.py \
    # Then process with:
    python3 scripts/monitor-all-news-sources.py \
        --anthropic-scraped-json /tmp/anthropic-news-YYYY-MM-DD.json \
-       --anthropic-pdfs ~/Desktop/anthropic-news-YYYY-MM-DD/
+       --anthropic-pdfs pdfs/anthropic-news-YYYY-MM-DD/
    ```
 
 **Benefits:**
@@ -174,12 +182,12 @@ python3 scripts/monitor-all-news-sources.py \
 # - Save as PDF: 01-article.pdf, 02-article.pdf, etc.
 # - Keep browser open between articles
 # - Files 400KB+ = success, ~115KB = paywall
-# - Save to: ~/Desktop/medium-articles-YYYY-MM-DD/
+# - Save to: pdfs/medium-articles-YYYY-MM-DD/
 
 # Step 2: Extract from email AND upload PDFs (combined step)
-# ⚠️ NOTE: Email files stored in: /Users/bgerby/Documents/dev/ai/inputs/MM-DD.eml
+# ⚠️ NOTE: Email files stored in: inputs/MM-DD.eml
 python3 scripts/extract-medium-articles.py \
-    /Users/bgerby/Documents/dev/ai/inputs/MM-DD.eml \
+    inputs/MM-DD.eml \
     --create-tickets \
     --upload-to-drive pdfs/medium-articles-YYYY-MM-DD/ \
     --output-json /tmp/medium-articles.json
@@ -191,22 +199,22 @@ python3 scripts/extract-medium-articles.py \
 
 # Step 4: Assess articles
 export OPENAI_API_KEY="sk-proj-..."
-python3 /Users/bgerby/Desktop/generate-article-assessment.py \
-    /Users/bgerby/Desktop/medium-articles-YYYY-MM-DD/ \
+python3 scripts/generate-article-assessment.py \
+    pdfs/medium-articles-YYYY-MM-DD/ \
     /tmp/medium-articles.json \
-    /Users/bgerby/Desktop/medium-articles-relevance-assessment-YYYY-MM-DD.md
+    assessments/medium-articles-relevance-assessment-YYYY-MM-DD.md
 
 # Step 5: Generate recommendations (REQUIRED for every Medium batch!)
 python3 scripts/generate-medium-recommendations.py \
-    /Users/bgerby/Documents/dev/ai/assessments/medium-articles-relevance-assessment-YYYY-MM-DD.md \
+    assessments/medium-articles-relevance-assessment-YYYY-MM-DD.md \
     /tmp/medium-articles.json
 # Output: outputs/medium-recommendations-YYYY-MM-DD.txt
 # Analyzes which authors/publications/topics to follow/mute based on HIGH vs LOW priority
 
 # Step 6: Generate audio for HIGH priority (FULLY AUTOMATIC!)
-python3 /Users/bgerby/Desktop/generate-audio-from-assessment.py \
-    /Users/bgerby/Desktop/medium-articles-YYYY-MM-DD \
-    /Users/bgerby/Desktop/medium-articles-relevance-assessment-YYYY-MM-DD.md
+python3 scripts/generate-audio-from-assessment.py \
+    pdfs/medium-articles-YYYY-MM-DD \
+    assessments/medium-articles-relevance-assessment-YYYY-MM-DD.md
 # ⚡ FULLY AUTOMATED (October 24, 2025):
 #   - Crops footer content (Topics, Author, Recommendations)
 #   - Uploads MP3s to Google Drive
@@ -284,19 +292,15 @@ Root (0ALLCxnOLmj3bUk9PVA)
 
 ### Scripts Location
 
-**Desktop scripts** (`/Users/bgerby/Desktop/`):
+**All scripts are now in the repository** (`/Users/bgerby/Documents/dev/ai/scripts/`):
+- `monitor-all-news-sources.py` - **🆕 UNIFIED processor for all sources (RECOMMENDED)**
 - `extract-medium-articles.py` - Parse Medium emails
-- `upload-to-drive-helper.py` - Upload PDFs to Drive
 - `generate-article-assessment.py` - AI analysis with GPT-4
 - `generate-medium-recommendations.py` - Follow/mute suggestions
 - `generate-audio-from-assessment.py` - TTS for HIGH priority
-- `upload-audio-to-drive.py` - Upload MP3s to Drive
-
-**Repository scripts** (`/Users/bgerby/Documents/dev/ai/scripts/`):
-- `monitor-all-news-sources.py` - **🆕 UNIFIED processor for all sources (RECOMMENDED)**
 - `monitor-optimizely-blog.py` - RSS monitoring + JIRA ticket creation
 - `anthropic-scraper.py` - **🆕 Anthropic news processing (no RSS, requires scraped JSON)**
-- `scrape-optimizely-history.py` - Historical backfill (optional)
+- `upload-to-drive-helper.py` - Upload PDFs to Drive (legacy)
 - `capture-optimizely-articles.py` - PDF capture helper
 
 **Podcast feed scripts** (`/Users/bgerby/Documents/dev/ai/jaxon-research-feed/`):
@@ -572,7 +576,7 @@ python3 scripts/scrape-optimizely-history.py --dry-run
 2. **Capture PDFs** (via Claude Code + Playwright):
    ```bash
    # For each article URL, save as PDF:
-   # ~/Desktop/anthropic-news-YYYY-MM-DD/01-article-title.pdf
+   # pdfs/anthropic-news-YYYY-MM-DD/01-article-title.pdf
    ```
 
 3. **Process articles and create tickets**:
@@ -590,7 +594,7 @@ python3 scripts/scrape-optimizely-history.py --dry-run
    ```bash
    python3 scripts/monitor-all-news-sources.py \
        --anthropic-scraped-json /tmp/anthropic-news-YYYY-MM-DD.json \
-       --anthropic-pdfs ~/Desktop/anthropic-news-YYYY-MM-DD/
+       --anthropic-pdfs pdfs/anthropic-news-YYYY-MM-DD/
    ```
 
 **Limitations:**

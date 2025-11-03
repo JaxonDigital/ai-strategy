@@ -7,7 +7,7 @@ Uses hybrid strategy:
 2. Fall back to manual Playwright capture if needed
 
 Usage:
-    python3 scripts/capture-optimizely-articles.py /tmp/optimizely-articles.json /Users/bgerby/Desktop/optimizely-articles-2025-10-23
+    python3 scripts/capture-optimizely-articles.py /tmp/optimizely-articles.json /Users/bgerby/Documents/dev/ai/pdfs/optimizely-articles-2025-10-23
 """
 
 import argparse
