@@ -128,8 +128,16 @@ Daily process for reviewing Medium articles and Optimizely World blog posts, tra
 
 **NEW: Process all sources with one command!**
 
+**✨ AUTO-DETECTION (November 4, 2025):** Email path is now optional - automatically uses the latest `.eml` file from `inputs/` directory!
+
 ```bash
-# Daily workflow - ALL THREE SOURCES in one go
+# Daily workflow - ALL THREE SOURCES in one go (no email path needed!)
+python3 scripts/monitor-all-news-sources.py \
+    --medium-pdfs pdfs/medium-articles-YYYY-MM-DD/ \
+    --optimizely-pdfs pdfs/optimizely-articles-YYYY-MM-DD/ \
+    --anthropic-pdfs pdfs/anthropic-news-YYYY-MM-DD/
+
+# Or specify explicit email path (backward compatible):
 python3 scripts/monitor-all-news-sources.py \
     --medium-email inputs/MM-DD.eml \
     --medium-pdfs pdfs/medium-articles-YYYY-MM-DD/ \
@@ -137,15 +145,16 @@ python3 scripts/monitor-all-news-sources.py \
     --anthropic-pdfs pdfs/anthropic-news-YYYY-MM-DD/
 
 # ✨ This automatically:
-#   1. Extracts Medium articles from email
-#   2. Checks Optimizely RSS for new articles
-#   3. Processes Anthropic news (if scraped JSON provided)
-#   4. Uploads ALL PDFs to Google Drive
-#   5. Creates JIRA tickets with PDF links
-#   6. Generates UNIFIED assessment for all sources
-#   7. Generates audio for HIGH priority articles
-#   8. Updates JIRA with assessments and audio links
-#   9. Publishes RSS podcast feed
+#   1. Auto-detects latest email from inputs/ (if --medium-email not provided)
+#   2. Extracts Medium articles from email
+#   3. Checks Optimizely RSS for new articles
+#   4. Processes Anthropic news (if scraped JSON provided)
+#   5. Uploads ALL PDFs to Google Drive
+#   6. Creates JIRA tickets with PDF links
+#   7. Generates UNIFIED assessment for all sources
+#   8. Generates audio for HIGH priority articles
+#   9. Updates JIRA with assessments and audio links
+#   10. Publishes RSS podcast feed
 ```
 
 **Prerequisites:**
@@ -186,6 +195,13 @@ python3 scripts/monitor-all-news-sources.py \
 
 # Step 2: Extract from email AND upload PDFs (combined step)
 # ⚠️ NOTE: Email files stored in: inputs/MM-DD.eml
+# ✨ NEW (Nov 4, 2025): Email path is optional - auto-detects latest from inputs/!
+python3 scripts/extract-medium-articles.py \
+    --create-tickets \
+    --upload-to-drive pdfs/medium-articles-YYYY-MM-DD/ \
+    --output-json /tmp/medium-articles.json
+
+# Or specify explicit path (backward compatible):
 python3 scripts/extract-medium-articles.py \
     inputs/MM-DD.eml \
     --create-tickets \
@@ -193,6 +209,7 @@ python3 scripts/extract-medium-articles.py \
     --output-json /tmp/medium-articles.json
 
 # ✓ This automatically:
+#   - Auto-detects latest email from inputs/ (if path not provided)
 #   - Uploads PDFs to Google Drive
 #   - Creates JIRA tickets WITH PDF links
 #   - Generates metadata JSON
@@ -262,11 +279,18 @@ git add feed.rss && git commit -m "Add episodes" && git push
 
 **Process:**
 1. Open browser visible (`headless: false`) on first article
-2. User logs in manually
-3. Save first article as PDF
-4. Navigate to next article (browser still open)
-5. Repeat steps 3-4 for all articles
-6. Close browser only when all articles captured
+2. **⚠️ PAUSE AND WAIT** - User must log in manually before proceeding
+3. **CRITICAL:** Do NOT navigate to second article until user confirms login is complete
+4. After login confirmation, save first article as PDF
+5. Navigate to next article (browser still open)
+6. Repeat steps 4-5 for all remaining articles
+7. Close browser only when all articles captured
+
+**Claude Code Workflow:**
+- When starting PDF capture, open first article with `headless: false`
+- **STOP and ask user**: "Please log in to Medium, then confirm when ready to proceed"
+- Wait for explicit user confirmation before saving first PDF or navigating to next article
+- After login confirmed, proceed with batch PDF capture
 
 ### Google Drive Integration
 
@@ -676,6 +700,54 @@ python3 scripts/scrape-optimizely-history.py --dry-run
 2. Capture PDFs (if not using `--upload-pdfs`)
 3. Generate assessment
 4. Generate audio → **automatically uploads to Drive + updates JIRA** ✨
+
+## Workflow Improvements (November 4, 2025)
+
+### 🚀 Email Auto-Detection & OpenAI API Resilience
+
+**Problem Solved:** Manual email path specification was slowing down daily workflow, and OpenAI TTS API timeouts needed better handling.
+
+**Solution Implemented:**
+
+1. **Email Auto-Detection** (lines 255-308 in both scripts)
+   - Both `monitor-all-news-sources.py` and `extract-medium-articles.py` now auto-detect latest `.eml` file
+   - Uses file modification time sorting: `sorted(inputs_dir.glob("*.eml"), key=lambda p: p.stat().st_mtime, reverse=True)`
+   - Backward compatible - explicit paths still work
+   - Clear feedback when auto-detecting: `🔍 Auto-detected Medium email: inputs/11-04.eml`
+
+2. **OpenAI TTS API Retry Strategy**
+   - Long articles (27+ chunks, ~98k characters) may require multiple retry attempts
+   - API timeouts (exit status 56/92) are transient and resolve with persistence
+   - Use `scripts/retry-single-audio.py` for failed articles
+   - Successfully completed GAT-613 (27 chunks) and GAT-615 (4 chunks) after retries
+
+**Key Learnings:**
+- **Auto-detection eliminates manual steps**: No need to specify email path every time
+- **OpenAI API is eventually consistent**: Timeouts are transient, retries succeed
+- **Login workflow critical**: Always pause and wait for explicit user confirmation before PDF capture
+- **PDF filename matching**: Ensure all PDFs follow expected naming convention with full article titles
+
+**Usage:**
+```bash
+# No email path needed - auto-detects latest from inputs/
+python3 scripts/monitor-all-news-sources.py \
+    --medium-pdfs pdfs/medium-articles-YYYY-MM-DD/
+
+# Or explicit path (backward compatible)
+python3 scripts/monitor-all-news-sources.py \
+    --medium-email inputs/11-04.eml \
+    --medium-pdfs pdfs/medium-articles-YYYY-MM-DD/
+```
+
+**Retry Strategy for Failed Audio:**
+```bash
+# When audio generation times out, retry individual articles
+cd /Users/bgerby/Documents/dev/ai
+OPENAI_API_KEY="sk-proj-..." python3 scripts/retry-single-audio.py \
+    GAT-XXX \
+    "Article Title" \
+    pdfs/path/to/article.pdf
+```
 
 ## Workflow Improvements (October 30, 2025)
 
