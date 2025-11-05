@@ -186,9 +186,13 @@ python3 scripts/monitor-all-news-sources.py \
 
 **Medium Articles:**
 ```bash
+# Step 0: Get exact PDF filenames BEFORE capture (prevents renaming issues!)
+python3 scripts/prepare-pdf-capture.py
+# Automatically detects latest email from inputs/ and prints exact filenames to use
+
 # Step 1: Capture PDFs (ask Claude Code to use Playwright)
 # - Navigate with headless: false for manual login
-# - Save as PDF: 01-article.pdf, 02-article.pdf, etc.
+# - Use EXACT filenames from Step 0 guide
 # - Keep browser open between articles
 # - Files 400KB+ = success, ~115KB = paywall
 # - Save to: pdfs/medium-articles-YYYY-MM-DD/
@@ -225,7 +229,7 @@ python3 scripts/generate-article-assessment.py \
 python3 scripts/generate-medium-recommendations.py \
     assessments/medium-articles-relevance-assessment-YYYY-MM-DD.md \
     /tmp/medium-articles.json
-# Output: outputs/medium-recommendations-YYYY-MM-DD.txt
+# ✅ Automatically saves to: outputs/medium-recommendations-YYYY-MM-DD.txt (Nov 5, 2025)
 # Analyzes which authors/publications/topics to follow/mute based on HIGH vs LOW priority
 
 # Step 6: Generate audio for HIGH priority (FULLY AUTOMATIC!)
@@ -318,9 +322,10 @@ Root (0ALLCxnOLmj3bUk9PVA)
 
 **All scripts are now in the repository** (`/Users/bgerby/Documents/dev/ai/scripts/`):
 - `monitor-all-news-sources.py` - **🆕 UNIFIED processor for all sources (RECOMMENDED)**
+- `prepare-pdf-capture.py` - **🆕 Extract article titles BEFORE PDF capture (Nov 5, 2025)**
 - `extract-medium-articles.py` - Parse Medium emails
 - `generate-article-assessment.py` - AI analysis with GPT-4
-- `generate-medium-recommendations.py` - Follow/mute suggestions
+- `generate-medium-recommendations.py` - Follow/mute suggestions (auto-saves to outputs/)
 - `generate-audio-from-assessment.py` - TTS for HIGH priority
 - `monitor-optimizely-blog.py` - RSS monitoring + JIRA ticket creation
 - `anthropic-scraper.py` - **🆕 Anthropic news processing (no RSS, requires scraped JSON)**
@@ -748,6 +753,84 @@ OPENAI_API_KEY="sk-proj-..." python3 scripts/retry-single-audio.py \
     "Article Title" \
     pdfs/path/to/article.pdf
 ```
+
+## Workflow Improvements (November 5, 2025)
+
+### 🔧 Permanent Fixes for Recurring Issues
+
+**Problem Solved:** Two recurring manual steps needed permanent automation:
+1. Recommendations file was only printing to stdout, never saved to file
+2. PDF filename mismatches required manual renaming after capture
+
+**Solution Implemented:**
+
+1. **Recommendations Auto-Save** (modified `scripts/generate-medium-recommendations.py`)
+   - Script now automatically saves output to `outputs/medium-recommendations-{date}.txt`
+   - Uses `io.StringIO()` and `redirect_stdout()` to capture output
+   - Creates outputs directory if needed
+   - Prints to console AND saves to file simultaneously
+   - Automatic date-based filename generation
+
+   **Code Changes:**
+   ```python
+   # Capture output to both stdout and file
+   output_buffer = io.StringIO()
+   with redirect_stdout(output_buffer):
+       generate_recommendations(assessment_path, metadata_path, pdf_dir)
+
+   # Print to console and save to file
+   output_text = output_buffer.getvalue()
+   print(output_text)
+   with open(output_file, 'w') as f:
+       f.write(output_text)
+   ```
+
+2. **PDF Capture Preparation** (new script `scripts/prepare-pdf-capture.py`)
+   - Extracts article titles from Medium email BEFORE PDF capture begins
+   - Generates exact slugified filenames that match extraction script expectations
+   - Prints numbered guide with precise PDF filenames to use
+   - Saves article list to `/tmp/medium-pdf-capture-list.json` for reference
+   - Auto-detects latest email if no path provided
+
+   **Usage:**
+   ```bash
+   # Step 0: Before capturing PDFs, run this first
+   python3 scripts/prepare-pdf-capture.py
+
+   # Output example:
+   # 1. We're Not Ready for What AI Agents Are Actually Doing
+   #    URL: https://medium.com/@alirezarezvani
+   #    📄 SAVE AS: 01-were-not-ready-for-what-ai-agents-are-actually-doing.pdf
+
+   # Then capture PDFs using the EXACT filenames shown
+   ```
+
+**Benefits:**
+- ✅ **No more missing recommendations files** - Always saved to outputs folder automatically
+- ✅ **No more PDF renaming** - Use correct filenames from the start
+- ✅ **Faster workflow** - Eliminates two manual steps entirely
+- ✅ **Fewer errors** - Prevents filename mismatches that break extraction
+- ✅ **Better organization** - All recommendations tracked in outputs/ directory
+
+**Updated Workflow:**
+```bash
+# New Step 0: Get PDF filenames (before capture)
+python3 scripts/prepare-pdf-capture.py
+
+# Then capture PDFs using exact filenames from guide
+# Then proceed with normal workflow - no renaming needed!
+
+# Recommendations now auto-save
+python3 scripts/generate-medium-recommendations.py \
+    assessments/medium-articles-relevance-assessment-YYYY-MM-DD.md \
+    /tmp/medium-articles.json
+# ✅ Automatically saves to: outputs/medium-recommendations-YYYY-MM-DD.txt
+```
+
+**Key Learnings:**
+- **Recurring manual steps indicate automation gaps** - If we fix the same thing multiple times, make it permanent
+- **Upfront filename generation prevents downstream errors** - Extract article titles before capture, not after
+- **Dual output (console + file) provides best UX** - User sees output immediately AND has file for reference
 
 ## Workflow Improvements (October 30, 2025)
 
