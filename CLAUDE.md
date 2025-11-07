@@ -839,10 +839,10 @@ python3 scripts/generate-medium-recommendations.py \
 **Problem Solved:** Without assessments visible in JIRA, it was unclear why LOW priority articles had no audio files.
 
 **Solution Implemented:**
-- Modified `generate-audio-from-assessment.py` to add assessments to ALL ticket descriptions (not just HIGH/MEDIUM)
+- Modified `generate-audio-from-assessment.py` to add assessments to ALL ticket descriptions (not just HIGH)
 - Two-phase processing:
   1. **Phase 1**: Update JIRA descriptions with assessments for ALL articles
-  2. **Phase 2**: Generate audio only for HIGH/MEDIUM priority articles
+  2. **Phase 2**: Generate audio only for HIGH priority articles
 
 **Key Changes:**
 
@@ -851,7 +851,7 @@ python3 scripts/generate-medium-recommendations.py \
      - Article URL, PDF link, Audio link (if exists)
      - Full assessment (relevance, key insights, strategic implications, action items, topics)
      - Priority with visual stars (⭐⭐⭐⭐⭐ HIGH, ⭐⭐⭐ MEDIUM, ⭐ LOW)
-     - Special note for LOW priority: "No audio file generated (only HIGH/MEDIUM priority articles receive audio)"
+     - Special note for LOW/MEDIUM priority: "No audio file generated (only HIGH priority articles receive audio)"
 
 2. **New Function: `update_jira_with_assessment()`** (line 468-525)
    - Replaces old `update_jira_with_audio_link()` function
@@ -866,7 +866,7 @@ python3 scripts/generate-medium-recommendations.py \
 
 4. **Two-Phase Main Loop** (line 665-693)
    - Phase 1: Update ALL tickets with assessments
-   - Phase 2: Generate audio only for HIGH/MEDIUM articles
+   - Phase 2: Generate audio only for HIGH priority articles
    - When audio uploaded, re-update JIRA with audio link
 
 **Benefits:**
@@ -888,14 +888,14 @@ Medium Article Review
 
 **Article URL:** https://...
 **PDF:** https://drive.google.com/...
-**Audio:** https://drive.google.com/... (only if HIGH/MEDIUM)
+**Audio:** https://drive.google.com/... (only if HIGH)
 
 ---
 
 # Assessment (AUTO-GENERATED)
 
 **Priority:** LOW ⭐
-**Note:** No audio file generated (only HIGH/MEDIUM priority articles receive audio)
+**Note:** No audio file generated (only HIGH priority articles receive audio)
 
 **Relevance Summary:**
 [Assessment content...]
@@ -911,6 +911,99 @@ Medium Article Review
 
 **Topics:** topic1, topic2, topic3
 ```
+
+## Workflow Improvements (November 7, 2025)
+
+### 🔧 Fixed Unified Workflow Script Paths
+
+**Problem Discovered:** The `scripts/monitor-all-news-sources.py` script had incorrect hardcoded paths pointing to Desktop instead of the scripts directory, causing "file not found" errors.
+
+**Solution Implemented:**
+- Updated lines 49-50 in `scripts/monitor-all-news-sources.py`:
+  ```python
+  # ❌ BEFORE (incorrect paths)
+  GENERATE_ASSESSMENT = Path.home() / "Desktop" / "generate-article-assessment.py"
+  GENERATE_AUDIO = Path.home() / "Desktop" / "generate-audio-from-assessment.py"
+
+  # ✅ AFTER (correct paths)
+  GENERATE_ASSESSMENT = SCRIPTS_DIR / "generate-article-assessment.py"
+  GENERATE_AUDIO = SCRIPTS_DIR / "generate-audio-from-assessment.py"
+  ```
+
+**Impact:** The unified workflow (`monitor-all-news-sources.py`) now works correctly from the repository directory.
+
+### ⚠️ Critical: Prevent Duplicate Ticket Creation
+
+**Problem Identified:** Running the unified workflow multiple times per day or after already processing sources separately causes duplicate JIRA tickets.
+
+**Root Cause:**
+- The unified workflow re-processes all sources (Medium, Optimizely, Anthropic) each time it runs
+- If Medium email was already processed separately earlier in the day, running the unified workflow creates duplicates
+- No cross-check between separate runs and unified workflow runs
+
+**Example from November 7:**
+- First run: Created GAT-649-658 (Medium articles)
+- Second run (unified workflow): Created GAT-665-674 (same Medium articles - duplicates!)
+- Result: Had to manually delete 11 duplicate tickets
+
+**Prevention Strategy:**
+1. **Run unified workflow ONLY ONCE per day** as the primary daily process
+2. **OR** skip sources already processed when running unified workflow
+3. **DO NOT** mix separate source processing + unified workflow on same day
+
+**Daily Workflow Best Practice:**
+```bash
+# ✅ RECOMMENDED: Use unified workflow for ALL sources once per day
+python3 scripts/monitor-all-news-sources.py \
+    --medium-pdfs pdfs/medium-articles-YYYY-MM-DD/ \
+    --optimizely-pdfs pdfs/optimizely-articles-YYYY-MM-DD/ \
+    --anthropic-pdfs pdfs/anthropic-news-YYYY-MM-DD/
+
+# ❌ AVOID: Mixing separate runs with unified workflow
+# Don't do this:
+python3 scripts/extract-medium-articles.py ...  # Separate Medium processing
+python3 scripts/monitor-all-news-sources.py ... # Later unified workflow (creates dupes!)
+```
+
+**Safeguards in Place:**
+- Each script maintains state files to track seen articles
+- JIRA ticket creation checks for existing tickets by URL
+- However, these safeguards don't prevent duplicates from multiple runs of different scripts processing the same source
+
+**Resolution:**
+- Deleted duplicate tickets GAT-663, GAT-665-674
+- Kept original tickets GAT-649-658, GAT-662, GAT-664
+- Documented proper daily workflow to prevent recurrence
+
+### 📝 One-Off Article Processing
+
+**Use Case:** Processing individual articles from sources not in the daily workflow (e.g., AWS Insights, LinkedIn, etc.)
+
+**Process:**
+1. **Create JIRA ticket** with article URL
+2. **Capture PDF** using Playwright MCP
+3. **Create metadata JSON** with proper structure:
+   ```json
+   {
+     "source": "source-name",
+     "total_articles": 1,
+     "articles": [
+       {
+         "number": 1,
+         "title": "Article Title",
+         "url": "https://...",
+         "ticket_id": "GAT-XXX"
+       }
+     ]
+   }
+   ```
+4. **Generate assessment** and audio using standard scripts
+
+**Example (November 7):**
+- Processed AWS Insights article on autonomous agents
+- Created GAT-675
+- Generated HIGH priority assessment and audio
+- Result: Successfully added to podcast feed
 
 ## Combined Daily Process
 
