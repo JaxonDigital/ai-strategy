@@ -329,7 +329,7 @@ Root (0ALLCxnOLmj3bUk9PVA)
 
 **All scripts are now in the repository** (`/Users/bgerby/Documents/dev/ai/scripts/`):
 - `monitor-all-news-sources.py` - **🆕 UNIFIED processor for all sources (RECOMMENDED)**
-- `prepare-pdf-capture.py` - **🆕 Extract article titles BEFORE PDF capture (Nov 5, 2025)**
+- `prepare-pdf-capture.py` - **🆕 Extract article titles BEFORE PDF capture (Nov 5, 2025) - CRITICAL for correct PDF numbering (regex fix Nov 10, 2025)**
 - `extract-medium-articles.py` - Parse Medium emails
 - `generate-article-assessment.py` - AI analysis with GPT-4
 - `generate-medium-recommendations.py` - Follow/mute suggestions (auto-saves to outputs/)
@@ -407,6 +407,54 @@ git add feed.rss && git commit -m "Fix metadata for GAT-XXX episodes" && git pus
 python3.11 scripts/update-existing-audio-metadata.py GAT-XXX GAT-YYY GAT-ZZZ
 # Note: Requires matching JSON files in /tmp/ for article number mapping
 ```
+
+#### Troubleshooting: PDF Filename Mismatches (Fixed November 10, 2025)
+
+**Issue:** When running extract-medium-articles.py, seeing errors like "⚠ PDF not found: pdfs/.../01-article-name.pdf" even though PDFs exist with different names.
+
+**Root Cause:** Document ordering inconsistency between scripts:
+- `prepare-pdf-capture.py` preserves email document order (order articles appear in email)
+- `extract-medium-articles.py` was sorting URLs alphabetically (after converting set to list)
+- This caused PDF numbering mismatches (01-article-A.pdf vs 01-article-Z.pdf)
+
+**Solution (Applied November 10, 2025):**
+Changed `extract-medium-articles.py` line 39-81 to preserve document order:
+```python
+# Changed from set() + sorted() to list with manual deduplication
+articles = []  # Changed from set to list
+seen = set()   # Track duplicates separately
+for url in user_urls:
+    if url not in seen:
+        seen.add(url)
+        articles.append(url)  # Preserves order
+# Removed sorted() at return
+```
+
+**Prevention:** The `prepare-pdf-capture.py` step is now **CRITICAL** - always run it BEFORE PDF capture to get exact filenames.
+
+#### Troubleshooting: Podcast Episodes Won't Play (Fixed November 10, 2025)
+
+**Issue:** Some podcast episodes show in feed but won't play in podcast apps (download fails).
+
+**Root Cause:** Google Drive URL format in `audio-reviews/drive-urls.json` using `/view?usp=drivesdk` instead of direct download format.
+
+**Solution:**
+Change Drive URL format from:
+```
+https://drive.google.com/file/d/FILE_ID/view?usp=drivesdk
+```
+To:
+```
+https://drive.google.com/uc?export=download&id=FILE_ID
+```
+
+**How to Fix:**
+1. Find broken URLs in `audio-reviews/drive-urls.json`
+2. Extract FILE_ID from URL
+3. Replace with download format: `https://drive.google.com/uc?export=download&id=FILE_ID`
+4. Regenerate RSS feed and push to GitHub
+
+**Prevention:** The `generate-audio-from-assessment.py` script should automatically use the correct format. This was an isolated issue from manual URL entry.
 
 ### Assessment Criteria (Updated for SaaS Pivot - October 2025)
 
