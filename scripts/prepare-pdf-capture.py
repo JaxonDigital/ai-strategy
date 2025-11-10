@@ -61,23 +61,24 @@ def extract_articles(email_path):
     body = unescape(body)
     
     # Extract article titles and URLs
-    # Pattern: <h2...>Title</h2> followed by URL
+    # Pattern: <a href with article URL, then <h2> with title inside
     articles = []
-    
-    # Find all article blocks
-    article_pattern = r'<h2[^>]*>([^<]+)</h2>.*?href="(https://medium\.com/@[^"]+)"'
-    
+
+    # Find all article blocks - article URLs come first, then h2 with title
+    # Article URLs end with 12-char hex ID, author profiles don't
+    article_pattern = r'<a[^>]*href="(https://medium\.com/(?:@[a-zA-Z0-9_-]+|[a-zA-Z0-9_-]+)/[a-zA-Z0-9_-]+-[a-f0-9]{12})[^"]*"[^>]*>.*?<h2[^>]*>([^<]+)</h2>'
+
     for match in re.finditer(article_pattern, body, re.DOTALL):
-        title = match.group(1).strip()
-        url = match.group(2).strip()
-        
+        url = match.group(1).strip()
+        title = match.group(2).strip()
+
         # Clean URL (remove tracking parameters)
         url = url.split('?')[0]
-        
+
         # Skip if title looks like navigation/UI
         if title in ['Open in app', 'Sign up', 'Sign in', 'Get started']:
             continue
-        
+
         articles.append({
             'title': title,
             'url': url,
@@ -120,7 +121,14 @@ def main():
     print("MEDIUM ARTICLE PDF CAPTURE GUIDE")
     print("=" * 70)
     print(f"Found {len(articles)} articles\n")
-    
+
+    print("⚠️  IMPORTANT TIMING REQUIREMENTS:")
+    print("   • Keep browser open between ALL articles (do not close)")
+    print("   • Wait 30-45 seconds between each article navigation")
+    print("   • Verify article text loads fully before saving PDF")
+    print("   • Check file size after each save: 400KB+ = success, ~115KB = paywall")
+    print()
+
     print("STEP 1: Navigate to each article and save as PDF with these EXACT filenames:")
     print()
     

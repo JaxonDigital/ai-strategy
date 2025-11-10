@@ -287,16 +287,21 @@ git add feed.rss && git commit -m "Add episodes" && git push
 1. Open browser visible (`headless: false`) on first article
 2. **⚠️ PAUSE AND WAIT** - User must log in manually before proceeding
 3. **CRITICAL:** Do NOT navigate to second article until user confirms login is complete
-4. After login confirmation, save first article as PDF
-5. Navigate to next article (browser still open)
-6. Repeat steps 4-5 for all remaining articles
-7. Close browser only when all articles captured
+4. After login confirmation, wait 10 seconds for session to stabilize
+5. Save first article as PDF
+6. **⚠️ WAIT 30-45 SECONDS** before navigating to next article (Medium rate limiting)
+7. Navigate to next article (browser still open)
+8. Wait for page to fully load (verify article text visible, not just headline)
+9. Repeat steps 5-8 for all remaining articles
+10. Verify file sizes after each save: 400KB+ = success, ~115KB = paywall failure
+11. Close browser only when all articles captured
 
 **Claude Code Workflow:**
 - When starting PDF capture, open first article with `headless: false`
 - **STOP and ask user**: "Please log in to Medium, then confirm when ready to proceed"
 - Wait for explicit user confirmation before saving first PDF or navigating to next article
-- After login confirmed, proceed with batch PDF capture
+- After login confirmed, use explicit 30-45 second delays between each article navigation
+- Verify each PDF file size before proceeding to next article
 
 ### Google Drive Integration
 

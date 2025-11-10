@@ -509,9 +509,9 @@ def build_jira_description(article, pdf_link=None, audio_link=None):
 
     description += f"**Priority:** {article['priority']} {priority_stars}\n"
 
-    # Add note for LOW priority (no audio)
-    if article['priority'] == 'LOW':
-        description += "**Note:** No audio file generated (only HIGH/MEDIUM priority articles receive audio)\n"
+    # Add note for LOW/MEDIUM priority (no audio)
+    if article['priority'] in ['LOW', 'MEDIUM']:
+        description += "**Note:** No audio file generated (only HIGH priority articles receive audio)\n"
 
     description += "\n"
 
@@ -741,16 +741,16 @@ def main():
         else:
             print(f"  ✗ JIRA update failed")
 
-    # PHASE 2: Generate audio for HIGH/MEDIUM priority articles
-    high_medium_articles = {k: v for k, v in articles.items() if v['priority'] in ['HIGH', 'MEDIUM']}
+    # PHASE 2: Generate audio for HIGH priority articles only
+    high_articles = {k: v for k, v in articles.items() if v['priority'] == 'HIGH'}
     print(f"\n{'=' * 50}")
-    print(f"PHASE 2: Generating audio for {len(high_medium_articles)} HIGH/MEDIUM priority articles")
+    print(f"PHASE 2: Generating audio for {len(high_articles)} HIGH priority articles")
     print("=" * 50)
     print()
 
     results = []
 
-    for article_num, article in sorted(high_medium_articles.items()):
+    for article_num, article in sorted(high_articles.items()):
         print(f"\nProcessing Article {article_num}: {article['title']}")
         print(f"Ticket: {article['ticket_id']}")
 
