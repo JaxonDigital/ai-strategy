@@ -22,6 +22,14 @@ from html import unescape
 from pathlib import Path
 import json
 
+# Import shared patterns
+try:
+    from shared_patterns import MEDIUM_USER_ARTICLE_PATTERN, MEDIUM_PUB_ARTICLE_PATTERN
+except ImportError:
+    # Fallback if shared_patterns not available
+    MEDIUM_USER_ARTICLE_PATTERN = r'https://medium\.com/@[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+-[a-f0-9]{12}'
+    MEDIUM_PUB_ARTICLE_PATTERN = r'https://medium\.com/(?!plans|jobs-at-medium|@)[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+-[a-f0-9]{12}'
+
 def find_latest_email():
     """Find the most recent .eml file in inputs directory."""
     inputs_dir = Path(__file__).parent.parent / 'inputs'
@@ -60,13 +68,18 @@ def extract_articles(email_path):
     # Unescape HTML entities
     body = unescape(body)
     
-    # Extract article titles and URLs
+    # Extract article titles and URLs using shared patterns
     # Pattern: <a href with article URL, then <h2> with title inside
     articles = []
 
-    # Find all article blocks - article URLs come first, then h2 with title
-    # Article URLs end with 12-char hex ID, author profiles don't
-    article_pattern = r'<a[^>]*href="(https://medium\.com/(?:@[a-zA-Z0-9_-]+|[a-zA-Z0-9_-]+)/[a-zA-Z0-9_-]+-[a-f0-9]{12})[^"]*"[^>]*>.*?<h2[^>]*>([^<]+)</h2>'
+    # Build combined pattern from shared patterns
+    # User articles: @username/article-slug-12hexid
+    # Publication articles: publication/article-slug-12hexid
+    user_article_pattern = MEDIUM_USER_ARTICLE_PATTERN.replace('https://medium\\.com/', '').replace('\\', '')
+    pub_article_pattern = MEDIUM_PUB_ARTICLE_PATTERN.replace('https://medium\\.com/', '').replace('\\', '')
+
+    # Combined HTML-aware pattern
+    article_pattern = r'<a[^>]*href="(https://medium\.com/(?:@[a-zA-Z0-9_-]+/|(?!plans|jobs-at-medium|@)[a-zA-Z0-9_-]+/)[a-zA-Z0-9_-]+-[a-f0-9]{12})[^"]*"[^>]*>.*?<h2[^>]*>([^<]+)</h2>'
 
     for match in re.finditer(article_pattern, body, re.DOTALL):
         url = match.group(1).strip()

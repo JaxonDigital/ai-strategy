@@ -16,6 +16,7 @@ Usage:
 """
 
 import argparse
+import fcntl
 import json
 import os
 import re
@@ -28,8 +29,16 @@ from datetime import datetime
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 
+# Import shared patterns
+try:
+    from shared_patterns import JIRA_PROJECT_GAT, OPTIMIZELY_STATE_FILE
+except ImportError:
+    # Fallback if shared_patterns not available
+    JIRA_PROJECT_GAT = 'GAT'
+    OPTIMIZELY_STATE_FILE = "~/.optimizely-blog-state.json"
+
 # JIRA configuration
-JIRA_PROJECT = "GAT"
+JIRA_PROJECT = JIRA_PROJECT_GAT  # Use shared constant
 JIRA_API_URL = "https://jaxondigital.atlassian.net"
 JIRA_EMAIL = "bgerby@jaxondigital.com"
 JIRA_TOKEN_FILE = os.path.expanduser("~/.jira.d/.pass")
@@ -38,7 +47,7 @@ JIRA_TOKEN_FILE = os.path.expanduser("~/.jira.d/.pass")
 RSS_FEED_URL = "https://world.optimizely.com/blogs/?feed=RSS"
 
 # State file to track seen articles
-STATE_FILE = os.path.expanduser("~/.optimizely-blog-state.json")
+STATE_FILE = os.path.expanduser(OPTIMIZELY_STATE_FILE)
 
 
 def load_state():
@@ -453,6 +462,21 @@ def main():
                         help='Upload PDFs from specified directory to Google Drive and update tickets')
 
     args = parser.parse_args()
+
+    # Prevent concurrent execution with lockfile
+    lock_file_path = '/tmp/monitor-optimizely-blog.lock'
+    lock_file = open(lock_file_path, 'w')
+
+    try:
+        # Try to acquire exclusive lock (non-blocking)
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print("❌ Error: Another instance of this script is already running")
+        print(f"   Lock file: {lock_file_path}")
+        print("   If no other instance is running, remove the lock file manually")
+        sys.exit(1)
+
+    # Lock will be automatically released when script exits (or file closes)
 
     # Fetch RSS feed
     all_articles = fetch_rss_feed()

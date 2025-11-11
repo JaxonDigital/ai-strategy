@@ -34,6 +34,7 @@ Usage:
 """
 
 import argparse
+import fcntl
 import json
 import os
 import subprocess
@@ -312,6 +313,21 @@ def main():
         print("❌ Error: No sources specified. Provide at least one of:")
         print("   --medium-email, --optimizely-pdfs, or --anthropic-scraped-json")
         sys.exit(1)
+
+    # Prevent concurrent execution with lockfile
+    lock_file_path = '/tmp/monitor-all-news-sources.lock'
+    lock_file = open(lock_file_path, 'w')
+
+    try:
+        # Try to acquire exclusive lock (non-blocking)
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print("❌ Error: Another instance of this script is already running")
+        print(f"   Lock file: {lock_file_path}")
+        print("   If no other instance is running, remove the lock file manually")
+        sys.exit(1)
+
+    # Lock will be automatically released when script exits (or file closes)
 
     print("\n" + "=" * 60)
     print("📰 COMBINED NEWS SOURCES MONITOR")

@@ -57,6 +57,198 @@ Historical workflow improvements and fixes for the article review system.
 
 ---
 
+### 🔧 Phase 2: Robustness Improvements
+
+**Goal:** Add validation and retry logic to handle edge cases and API failures gracefully.
+
+#### Fix #6: Email Parsing Validation
+**Problem:** Medium email format changes could silently fail, resulting in zero articles extracted without warning.
+
+**Solution:** Enhanced `scripts/extract-medium-articles.py` with validation:
+- Checks if email contains "medium.com" but no articles extracted
+- Warns if < 3 articles found (usually expect 10-20)
+- Helps detect Medium email format changes early
+
+**Impact:** MEDIUM - Early detection of parsing failures prevents wasted time on empty batches.
+
+**Code Location:** extract-medium-articles.py, lines 67-94
+
+#### Fix #7: PDF Content Validation
+**Problem:** Paywalled or empty PDFs processed without detection, resulting in poor audio quality or TTS failures.
+
+**Solution:** Enhanced `scripts/generate-audio-from-assessment.py`:
+- Added `validate_content` parameter to `extract_text_from_pdf()`
+- Checks for empty PDFs (< 100 chars)
+- Detects paywall indicators ("member-only story", "sign up to read", etc.)
+- Added 30-second timeout with proper error handling
+- Returns `None` for invalid PDFs (skipped in audio generation)
+
+**Impact:** HIGH - Prevents processing of incomplete content, improves audio quality.
+
+**Code Location:** generate-audio-from-assessment.py, lines 45-74
+
+#### Fix #8: OpenAI Rate Limit Handling
+**Problem:** Assessment generation could fail mid-batch with RateLimitError, requiring manual restart and losing progress.
+
+**Solution:** Created `openai_api_call_with_retry()` wrapper in `scripts/generate-article-assessment.py`:
+- Exponential backoff with jitter: `(2 ** attempt) + random.uniform(0, 1)`
+- Retries up to 5 times for RateLimitError and APIError
+- Applied to both chunk analysis and synthesis calls
+- Preserves progress - failed chunks retry automatically
+
+**Impact:** HIGH - Eliminates manual intervention for transient API failures.
+
+**Code Location:** generate-article-assessment.py, lines 43-77, 294-306, 343-355
+
+**Algorithm:**
+```python
+for attempt in range(max_retries):
+    try:
+        return api_call_func()
+    except RateLimitError:
+        delay = (2 ** attempt) + random.uniform(0, 1)  # 1-2s, 2-3s, 4-5s, 8-9s, 16-17s
+        time.sleep(delay)
+```
+
+---
+
+### 🔍 Phase 3: Error Visibility & User Experience
+
+**Goal:** Improve debugging capability and provide feedback during long-running operations.
+
+#### Fix #9: Progress Indicators with tqdm
+**Problem:** Audio generation for 15+ articles takes 30+ minutes with no feedback - appears frozen.
+
+**Solution:** Added tqdm progress bars to `scripts/generate-audio-from-assessment.py`:
+- Shows progress bar with article count and completion percentage
+- Uses `tqdm.write()` to avoid disrupting progress bar
+- Graceful fallback if tqdm not installed (optional dependency)
+- Added import check: `HAS_TQDM` flag for conditional usage
+
+**Impact:** MEDIUM - Better user experience, easier to estimate completion time.
+
+**Code Location:** generate-audio-from-assessment.py, lines 20-28, 830-838
+
+**Usage:**
+```python
+from tqdm import tqdm
+for article_num, article in tqdm(articles, desc="Generating audio", unit="article"):
+    tqdm.write(f"Processing {article['title']}")
+```
+
+#### Fix #10: Subprocess Error Logging
+**Problem:** FFmpeg and JIRA CLI failures showed exit codes but no stderr output - impossible to debug.
+
+**Solution:** Created `log_subprocess_error()` function in multiple scripts:
+- Logs to `/tmp/workflow-errors.log` with timestamps
+- Captures stderr from FFmpeg concat operations
+- Captures stderr from FFmpeg metadata operations
+- Captures stderr from JIRA ticket creation
+- Captures stderr from JIRA ticket editing
+- Appends to log file (doesn't overwrite)
+
+**Impact:** HIGH - Debugging failures now takes minutes instead of hours.
+
+**Code Location:**
+- generate-audio-from-assessment.py: lines 30-43, 347-356, 386-403
+- extract-medium-articles.py: lines 34-47, 286-291, 334-338
+
+**Log Format:**
+```
+[2025-11-11 14:23:45] FFmpeg concat failed:
+Output #0, mp3, to '/path/to/output.mp3':
+  Stream #0:0: Audio: mp3, 44100 Hz, stereo, fltp, 128 kb/s
+```
+
+---
+
+### 🏗️ Phase 4: Architecture Improvements
+
+**Goal:** Prevent race conditions and ensure consistency across scripts.
+
+#### Fix #11: Shared Pattern Constants
+**Problem:** Regex patterns duplicated across scripts. Changes required updates in 5+ locations, causing divergence.
+
+**Solution:** Created `scripts/shared_patterns.py` with centralized constants:
+- Medium article URL patterns (user + publication)
+- JIRA project identifiers and ticket patterns
+- Priority levels (HIGH, MEDIUM, LOW)
+- File naming conventions (PDFs, audio)
+- Drive folder structure helpers
+- Audio generation settings (chunk size, bitrate, codec)
+- PDF validation thresholds and paywall indicators
+- State file locations (Optimizely, Anthropic)
+- Error log location
+
+**Impact:** MEDIUM - Easier maintenance, prevents pattern divergence.
+
+**Scripts Updated:**
+- `extract-medium-articles.py` - imports MEDIUM patterns, JIRA constants
+- `prepare-pdf-capture.py` - imports MEDIUM patterns
+- `monitor-optimizely-blog.py` - imports JIRA constants, state file location
+- `anthropic-scraper.py` - imports JIRA constants, state file location
+
+**Code Location:** shared_patterns.py (lines 1-78)
+
+#### Fix #12: Concurrent Run Prevention
+**Problem:** Running same script twice simultaneously could corrupt state files, create duplicate tickets, or cause race conditions.
+
+**Solution:** Implemented fcntl-based lockfiles in all workflow scripts:
+- Non-blocking lock attempt with `fcntl.LOCK_EX | fcntl.LOCK_NB`
+- Clear error message if another instance running
+- Automatic lock release on script exit (even with crashes)
+- Unique lock file per script (`/tmp/script-name.lock`)
+
+**Impact:** HIGH - Prevents data corruption from concurrent execution.
+
+**Scripts Protected:**
+- `monitor-all-news-sources.py` - `/tmp/monitor-all-news-sources.lock`
+- `extract-medium-articles.py` - `/tmp/extract-medium-articles.lock`
+- `monitor-optimizely-blog.py` - `/tmp/monitor-optimizely-blog.lock`
+- `generate-audio-from-assessment.py` - `/tmp/generate-audio-from-assessment.lock`
+
+**Code Pattern:**
+```python
+import fcntl
+
+lock_file = open('/tmp/script-name.lock', 'w')
+try:
+    fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    print("❌ Error: Another instance of this script is already running")
+    sys.exit(1)
+# Lock automatically released when script exits or file closes
+```
+
+---
+
+### 📊 Phase 2-4 Summary
+
+**Total Improvements:** 12 fixes (5 in Phase 1, 3 in Phase 2, 2 in Phase 3, 2 in Phase 4)
+
+**Files Modified:**
+1. `scripts/monitor-optimizely-blog.py` - atomic writes, transactional processing, JIRA constants, lockfile
+2. `scripts/anthropic-scraper.py` - atomic writes, JIRA constants
+3. `scripts/extract-medium-articles.py` - token handling, email validation, JIRA logging, shared patterns, lockfile
+4. `scripts/generate-audio-from-assessment.py` - disk space check, PDF validation, progress bars, FFmpeg logging, lockfile
+5. `scripts/generate-article-assessment.py` - rate limit handling with exponential backoff
+6. `jaxon-research-feed/generate-feed.py` - atomic writes, XML validation
+7. `scripts/shared_patterns.py` - NEW FILE with centralized constants
+8. `scripts/prepare-pdf-capture.py` - shared patterns import
+9. `scripts/monitor-all-news-sources.py` - lockfile protection
+
+**Impact by Priority:**
+- **CRITICAL (4 fixes):** Atomic state writes, transactional processing, token expiration, RSS feed integrity
+- **HIGH (5 fixes):** PDF validation, rate limit handling, error logging, concurrent run prevention
+- **MEDIUM (3 fixes):** Email validation, progress indicators, shared patterns
+
+**Next Steps:**
+- Phase 5: Logging framework (replace print with Python logging module)
+- Phase 6: JSON schema validation for metadata files
+- Phase 7: Unicode filename handling improvements
+
+---
+
 ### 🔧 Fixed PDF Filename Mismatch Issues
 
 **Root Cause:** Scripts generated expected PDF filenames by converting article titles to lowercase with spaces replaced by hyphens. However, actual PDF filenames saved by Playwright could differ due to:

@@ -18,6 +18,7 @@ Best Practice:
     python3 extract-medium-articles.py --create-tickets --upload-to-drive /path/to/pdfs/
 """
 
+import fcntl
 import re
 import base64
 import sys
@@ -31,10 +32,46 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.auth.transport.requests import Request
 
+# Import shared patterns and constants
+try:
+    from shared_patterns import (
+        MEDIUM_USER_ARTICLE_PATTERN,
+        MEDIUM_PUB_ARTICLE_PATTERN,
+        JIRA_PROJECT_GAT,
+        JIRA_TICKET_PATTERN,
+        ERROR_LOG_FILE
+    )
+except ImportError:
+    # Fallback if shared_patterns not available
+    MEDIUM_USER_ARTICLE_PATTERN = r'https://medium\.com/@[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+-[a-f0-9]{12}'
+    MEDIUM_PUB_ARTICLE_PATTERN = r'https://medium\.com/(?!plans|jobs-at-medium|@)[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+-[a-f0-9]{12}'
+    JIRA_PROJECT_GAT = 'GAT'
+    JIRA_TICKET_PATTERN = r'GAT-\d+'
+    ERROR_LOG_FILE = "/tmp/workflow-errors.log"
+
+def log_subprocess_error(command_name, stderr_output, log_file=ERROR_LOG_FILE):
+    """Log subprocess stderr to file for debugging."""
+    if not stderr_output or not stderr_output.strip():
+        return
+
+    try:
+        with open(log_file, 'a') as f:
+            f.write(f"\n{'='*60}\n")
+            f.write(f"{datetime.now().isoformat()} - {command_name}\n")
+            f.write(f"{'='*60}\n")
+            f.write(stderr_output)
+            f.write(f"\n")
+    except Exception as e:
+        print(f"  ⚠️  Warning: Could not write to error log: {e}")
+
 def extract_articles(email_path):
-    """Extract all Medium article URLs from email file."""
+    """Extract all Medium article URLs from email file with validation."""
     with open(email_path, 'r', encoding='utf-8', errors='ignore') as f:
-        lines = f.readlines()
+        content = f.read()
+        lines = content.split('\n')
+
+    # Validation: Check if email contains Medium content at all
+    has_medium_content = 'medium.com' in content.lower() or 'medium daily digest' in content.lower()
 
     articles = []  # Changed from set to list to preserve document order
     seen = set()   # Track duplicates separately
@@ -56,17 +93,15 @@ def extract_articles(email_path):
                         # 1. User articles: medium.com/@username/article-slug-12digitid
                         # 2. Publication articles: medium.com/publication/article-slug-12digitid
 
-                        # Pattern 1: @username articles (original pattern)
-                        user_urls = re.findall(r'https://medium\.com/@[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+-[a-f0-9]{12}', decoded)
+                        # Pattern 1: @username articles
+                        user_urls = re.findall(MEDIUM_USER_ARTICLE_PATTERN, decoded)
                         for url in user_urls:
                             if url not in seen:
                                 seen.add(url)
                                 articles.append(url)
 
-                        # Pattern 2: Publication articles (new pattern for "FROM YOUR FOLLOWING" section)
-                        # Match medium.com/publication-name/article-slug-12digitid
-                        # Exclude common non-article paths like /plans, /jobs-at-medium, etc.
-                        pub_urls = re.findall(r'https://medium\.com/(?!plans|jobs-at-medium|@)[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+-[a-f0-9]{12}', decoded)
+                        # Pattern 2: Publication articles
+                        pub_urls = re.findall(MEDIUM_PUB_ARTICLE_PATTERN, decoded)
                         for url in pub_urls:
                             if url not in seen:
                                 seen.add(url)
@@ -77,6 +112,15 @@ def extract_articles(email_path):
                 in_base64 = False
             else:
                 base64_content.append(line.strip())
+
+    # Validation: Warn if no articles found but email contains Medium content
+    if len(articles) == 0 and has_medium_content:
+        print("⚠️  WARNING: Email contains 'medium.com' but no article URLs extracted!")
+        print("    This may indicate Medium changed their email format.")
+        print("    Please verify email content and update regex patterns if needed.\n")
+    elif len(articles) < 3 and has_medium_content:
+        print(f"⚠️  WARNING: Only {len(articles)} articles found (usually 10-20 expected)")
+        print("    This may indicate incomplete parsing. Please verify.\n")
 
     return articles  # Removed sorted() to preserve document order
 
@@ -256,6 +300,12 @@ To be reviewed for relevance to Jaxon Digital's AI agent initiatives."""
     env['JIRA_API_TOKEN'] = jira_token
 
     result = subprocess.run(cmd, env=env, capture_output=True, text=True)
+
+    # Log any errors from JIRA CLI
+    if result.returncode != 0 and result.stderr:
+        log_subprocess_error(f"JIRA edit {ticket_id}", result.stderr)
+        print(f"    ✗ JIRA CLI error: {result.stderr.strip()[:100]}")
+
     return result.returncode == 0
 
 def create_jira_ticket(url, title, pdf_link=None):
@@ -297,6 +347,11 @@ To be reviewed for relevance to Jaxon Digital's AI agent initiatives."""
         match = re.search(r'GAT-\d+', result.stdout)
         if match:
             return match.group(0)
+    else:
+        # Log any errors from JIRA CLI
+        if result.stderr:
+            log_subprocess_error("JIRA create ticket", result.stderr)
+            print(f"    ✗ JIRA CLI error: {result.stderr.strip()[:100]}")
 
     return None
 
@@ -347,6 +402,21 @@ def main():
         if arg == '--upload-to-drive' and i + 1 < len(sys.argv):
             upload_to_drive = sys.argv[i + 1]
             break
+
+    # Prevent concurrent execution with lockfile
+    lock_file_path = '/tmp/extract-medium-articles.lock'
+    lock_file = open(lock_file_path, 'w')
+
+    try:
+        # Try to acquire exclusive lock (non-blocking)
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print("❌ Error: Another instance of this script is already running")
+        print(f"   Lock file: {lock_file_path}")
+        print("   If no other instance is running, remove the lock file manually")
+        sys.exit(1)
+
+    # Lock will be automatically released when script exits (or file closes)
 
     print(f"Extracting articles from: {email_path}")
     articles = extract_articles(email_path)

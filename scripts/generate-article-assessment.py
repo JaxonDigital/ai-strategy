@@ -27,6 +27,7 @@ import json
 import subprocess
 import re
 import time
+import random
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
@@ -34,9 +35,46 @@ from datetime import datetime
 # Check for OpenAI package
 try:
     from openai import OpenAI
+    import openai
 except ImportError:
     print("Error: openai package not installed. Install with: pip3 install openai")
     sys.exit(1)
+
+def openai_api_call_with_retry(api_call_func, max_retries=5):
+    """
+    Wrapper for OpenAI API calls with exponential backoff for rate limits.
+
+    Args:
+        api_call_func: Function that makes the OpenAI API call
+        max_retries: Maximum number of retry attempts (default: 5)
+
+    Returns:
+        Result from api_call_func
+
+    Raises:
+        Last exception if all retries fail
+    """
+    for attempt in range(max_retries):
+        try:
+            return api_call_func()
+        except openai.RateLimitError as e:
+            if attempt == max_retries - 1:
+                # Last attempt failed, re-raise
+                raise
+            # Exponential backoff with jitter
+            delay = (2 ** attempt) + random.uniform(0, 1)
+            print(f"  ⚠️  Rate limit hit, retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries})")
+            time.sleep(delay)
+        except openai.APIError as e:
+            # API errors (500, 503, etc.) - retry with backoff
+            if attempt == max_retries - 1:
+                raise
+            delay = (2 ** attempt) + random.uniform(0, 1)
+            print(f"  ⚠️  API error, retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries})")
+            time.sleep(delay)
+        except Exception as e:
+            # Other errors, don't retry
+            raise
 
 # Path to canonical strategic context in Pivot project
 PIVOT_STRATEGIC_CONTEXT_PATH = "/Users/bgerby/Documents/dev/pivot/sprint-0/STRATEGIC_CONTEXT.md"
@@ -253,16 +291,19 @@ Focus on:
 """
 
     try:
-        response = client.chat.completions.create(
-            model="gpt-4-turbo-preview",
-            messages=[
-                {"role": "system", "content": "You are a strategic analyst for Jaxon Digital, assessing article relevance to AI agent initiatives."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.3,
-            response_format={"type": "json_object"}
-        )
+        # Wrap API call with retry logic for rate limit handling
+        def make_api_call():
+            return client.chat.completions.create(
+                model="gpt-4-turbo-preview",
+                messages=[
+                    {"role": "system", "content": "You are a strategic analyst for Jaxon Digital, assessing article relevance to AI agent initiatives."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                response_format={"type": "json_object"}
+            )
 
+        response = openai_api_call_with_retry(make_api_call)
         analysis = json.loads(response.choices[0].message.content)
         return analysis
 
@@ -299,16 +340,19 @@ Combine insights from all chunks, prioritize most important points, remove dupli
 """
 
     try:
-        response = client.chat.completions.create(
-            model="gpt-4-turbo-preview",
-            messages=[
-                {"role": "system", "content": "You are a strategic analyst synthesizing multi-part article analysis."},
-                {"role": "user", "content": synthesis_prompt}
-            ],
-            temperature=0.3,
-            response_format={"type": "json_object"}
-        )
+        # Wrap API call with retry logic for rate limit handling
+        def make_api_call():
+            return client.chat.completions.create(
+                model="gpt-4-turbo-preview",
+                messages=[
+                    {"role": "system", "content": "You are a strategic analyst synthesizing multi-part article analysis."},
+                    {"role": "user", "content": synthesis_prompt}
+                ],
+                temperature=0.3,
+                response_format={"type": "json_object"}
+            )
 
+        response = openai_api_call_with_retry(make_api_call)
         return json.loads(response.choices[0].message.content)
 
     except Exception as e:

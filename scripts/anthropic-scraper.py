@@ -19,11 +19,19 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+# Import shared patterns
+try:
+    from shared_patterns import JIRA_PROJECT_GAT, ANTHROPIC_STATE_FILE
+except ImportError:
+    # Fallback if shared_patterns not available
+    JIRA_PROJECT_GAT = 'GAT'
+    ANTHROPIC_STATE_FILE = "~/.anthropic-news-state.json"
+
 # State file to track seen articles
-STATE_FILE = os.path.expanduser("~/.anthropic-news-state.json")
+STATE_FILE = os.path.expanduser(ANTHROPIC_STATE_FILE)
 
 # JIRA configuration
-JIRA_PROJECT = "GAT"
+JIRA_PROJECT = JIRA_PROJECT_GAT  # Use shared constant
 JIRA_TOKEN_FILE = os.path.expanduser("~/.jira.d/.pass")
 
 

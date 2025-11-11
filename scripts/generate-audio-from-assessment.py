@@ -9,6 +9,7 @@ Usage:
         /Users/bgerby/Documents/dev/ai/assessments/medium-articles-relevance-assessment-2025-10-21.md
 """
 
+import fcntl
 import os
 import sys
 import re
@@ -17,18 +18,85 @@ import json
 from pathlib import Path
 from datetime import datetime
 
-def extract_text_from_pdf(pdf_path):
-    """Extract text from PDF using pdftotext."""
+# Try to import tqdm for progress bars (optional)
+try:
+    from tqdm import tqdm
+    HAS_TQDM = True
+except ImportError:
+    # Fallback: create a simple pass-through iterator
+    def tqdm(iterable, **kwargs):
+        return iterable
+    HAS_TQDM = False
+
+def log_subprocess_error(command_name, stderr_output, log_file="/tmp/workflow-errors.log"):
+    """Log subprocess stderr to file for debugging."""
+    if not stderr_output or not stderr_output.strip():
+        return
+
+    try:
+        with open(log_file, 'a') as f:
+            f.write(f"\n{'='*60}\n")
+            f.write(f"{datetime.now().isoformat()} - {command_name}\n")
+            f.write(f"{'='*60}\n")
+            f.write(stderr_output)
+            f.write(f"\n")
+    except Exception as e:
+        print(f"  ⚠️  Warning: Could not write to error log: {e}")
+
+def extract_text_from_pdf(pdf_path, validate_content=True):
+    """Extract text from PDF using pdftotext with content validation.
+
+    Args:
+        pdf_path: Path to PDF file
+        validate_content: If True, validates PDF contains meaningful content
+
+    Returns:
+        Extracted text, or None if extraction fails or content is invalid
+    """
     try:
         result = subprocess.run(
             ['pdftotext', str(pdf_path), '-'],
             capture_output=True,
             text=True,
-            check=True
+            check=True,
+            timeout=30
         )
-        return result.stdout
+        text = result.stdout
+
+        # Content validation: Check for paywalled or empty PDFs
+        if validate_content:
+            text_length = len(text.strip())
+
+            # Check for paywall indicators
+            paywall_indicators = [
+                'member-only story',
+                'this story is for medium members',
+                'upgrade to continue reading',
+                'become a member to read this story',
+                'sign up to read'
+            ]
+
+            has_paywall = any(indicator in text.lower() for indicator in paywall_indicators)
+
+            # Validation checks
+            if text_length < 100:
+                print(f"  ⚠️  WARNING: PDF appears empty ({text_length} chars)")
+                return None
+            elif text_length < 500:
+                print(f"  ⚠️  WARNING: PDF suspiciously short ({text_length} chars) - may be paywalled")
+            elif has_paywall and text_length < 2000:
+                print(f"  ⚠️  WARNING: PDF may be paywalled (paywall text detected, only {text_length} chars)")
+                return None
+
+        return text
+    except subprocess.TimeoutExpired:
+        print(f"  ✗ Error: PDF extraction timeout after 30s")
+        return None
     except subprocess.CalledProcessError as e:
-        print(f"Error extracting text from {pdf_path}: {e}")
+        print(f"  ✗ Error extracting text: {e}")
+        return None
+    except Exception as e:
+        print(f"  ✗ Unexpected error: {e}")
         return None
 
 def clean_text_for_speech(text):
@@ -277,12 +345,16 @@ def generate_audio_openai(text, output_path):
                 for chunk_file in chunk_files:
                     f.write(f"file '{chunk_file.name}'\n")
 
-            subprocess.run([
+            result = subprocess.run([
                 'ffmpeg', '-f', 'concat', '-safe', '0',
                 '-i', str(concat_file),
                 '-acodec', 'copy',
                 '-y', str(output_path)
-            ], check=True, capture_output=True)
+            ], check=True, capture_output=True, text=True)
+
+            # Log any warnings from FFmpeg
+            if result.stderr:
+                log_subprocess_error("FFmpeg concat", result.stderr)
 
             concat_file.unlink()
             for chunk_file in chunk_files:
@@ -312,7 +384,7 @@ def add_metadata(audio_path, title, gat_number, description="High Priority Artic
         if len(description) > 200:
             description = description[:197] + "..."
 
-        subprocess.run([
+        result = subprocess.run([
             'ffmpeg', '-i', str(audio_path),
             '-acodec', 'libmp3lame',
             '-ab', '128k',
@@ -325,7 +397,11 @@ def add_metadata(audio_path, title, gat_number, description="High Priority Artic
             '-metadata', 'genre=Podcast',
             '-y',
             str(final_mp3)
-        ], check=True, capture_output=True)
+        ], check=True, capture_output=True, text=True)
+
+        # Log any warnings from FFmpeg
+        if result.stderr:
+            log_subprocess_error("FFmpeg metadata", result.stderr)
 
         audio_path.unlink()
 
@@ -707,6 +783,21 @@ def main():
         print(f"Error: Assessment file not found: {assessment_path}")
         sys.exit(1)
 
+    # Prevent concurrent execution with lockfile
+    lock_file_path = '/tmp/generate-audio-from-assessment.lock'
+    lock_file = open(lock_file_path, 'w')
+
+    try:
+        # Try to acquire exclusive lock (non-blocking)
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print("❌ Error: Another instance of this script is already running")
+        print(f"   Lock file: {lock_file_path}")
+        print("   If no other instance is running, remove the lock file manually")
+        sys.exit(1)
+
+    # Lock will be automatically released when script exits (or file closes)
+
     # Check disk space before starting (critical - audio files can be large!)
     import shutil
     try:
@@ -775,8 +866,15 @@ def main():
 
     results = []
 
-    for article_num, article in sorted(high_articles.items()):
-        print(f"\nProcessing Article {article_num}: {article['title']}")
+    # Progress bar for audio generation (if tqdm available)
+    article_items = sorted(high_articles.items())
+    progress_desc = "Generating audio" if HAS_TQDM else None
+
+    for article_num, article in tqdm(article_items, desc=progress_desc, unit="article", disable=not HAS_TQDM):
+        if HAS_TQDM:
+            tqdm.write(f"\nProcessing Article {article_num}: {article['title']}")
+        else:
+            print(f"\nProcessing Article {article_num}: {article['title']}")
         print(f"Ticket: {article['ticket_id']}")
 
         # Check if audio already exists
