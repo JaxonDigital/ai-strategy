@@ -112,13 +112,17 @@ def upload_existing_pdfs(pdf_dir, pdfs_folder_id, articles_data):
         pdf_num = article['number']
         title = article['title']
 
-        # Construct PDF filename
-        pdf_filename = f"{pdf_num:02d}-{title.lower().replace(' ', '-')}.pdf"
-        pdf_path = os.path.join(pdf_dir, pdf_filename)
+        # Find PDF by article number prefix (robust to filename variations)
+        pdf_prefix = f"{pdf_num:02d}-"
+        pdf_files = [f for f in os.listdir(pdf_dir) if f.startswith(pdf_prefix) and f.endswith('.pdf')]
 
-        if not os.path.exists(pdf_path):
-            print(f"⚠ PDF not found: {pdf_filename}")
+        if not pdf_files:
+            print(f"⚠ PDF not found with prefix: {pdf_prefix}")
             continue
+
+        # Use the first matching file (should only be one)
+        pdf_filename = pdf_files[0]
+        pdf_path = os.path.join(pdf_dir, pdf_filename)
 
         print(f"\n{pdf_num}. {title}")
         print(f"   Ticket: {ticket_id}")

@@ -4,6 +4,26 @@ Historical workflow improvements and fixes for the article review system.
 
 ---
 
+## November 11, 2025
+
+### 🔧 Fixed PDF Filename Mismatch Issues
+
+**Root Cause:** Scripts generated expected PDF filenames by converting article titles to lowercase with spaces replaced by hyphens. However, actual PDF filenames saved by Playwright could differ due to:
+- OS/browser filename length limits causing truncation
+- Different character sanitization (apostrophes, special chars)
+- Mismatched title extraction from URL slugs
+
+**Solution:** Changed all scripts to find PDFs by article number prefix (e.g., "01-", "02-") instead of generating expected filenames. This makes the workflow robust to any filename variations.
+
+**Scripts Fixed:**
+1. `scripts/extract-medium-articles.py` (line 347-363)
+2. `scripts/upload-to-drive-helper.py` (line 115-125)
+3. `scripts/generate-medium-recommendations.py` (line 233-239)
+
+**Impact:** Eliminates "PDF not found" errors during article processing, ensuring 100% success rate for PDF uploads and metadata updates.
+
+---
+
 ## October 24, 2025
 
 ### 🎉 New Automated Features

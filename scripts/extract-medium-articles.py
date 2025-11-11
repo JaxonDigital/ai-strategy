@@ -344,11 +344,15 @@ def main():
         # Upload to Drive FIRST if requested (required for ticket creation)
         drive_link = None
         if upload_to_drive:
-            # Look for PDF file
-            pdf_filename = f"{i:02d}-{title.lower().replace(' ', '-')}.pdf"
-            pdf_path = os.path.join(upload_to_drive, pdf_filename)
+            # Find PDF by article number prefix (robust to filename variations)
+            pdf_prefix = f"{i:02d}-"
+            pdf_files = [f for f in os.listdir(upload_to_drive) if f.startswith(pdf_prefix) and f.endswith('.pdf')]
 
-            if os.path.exists(pdf_path):
+            if pdf_files:
+                # Use the first matching file (should only be one)
+                pdf_filename = pdf_files[0]
+                pdf_path = os.path.join(upload_to_drive, pdf_filename)
+
                 try:
                     file_id, web_link = upload_file_to_drive(drive_service, pdf_path, pdfs_folder)
                     drive_link = get_shareable_link(drive_service, file_id)
@@ -356,7 +360,7 @@ def main():
                 except Exception as e:
                     print(f"    ✗ Upload failed: {e}")
             else:
-                print(f"    ⚠ PDF not found: {pdf_path}")
+                print(f"    ⚠ PDF not found with prefix: {pdf_prefix}")
 
         # Create ticket with PDF link (or without if --upload-to-drive not used)
         ticket_id = None

@@ -230,9 +230,13 @@ def generate_recommendations(assessment_path, metadata_path, pdf_dir=None):
         # Extract author
         author = None
         if pdf_dir:
-            pdf_filename = f"{num:02d}-{meta['title'].lower().replace(' ', '-')}.pdf"
-            pdf_path = os.path.join(pdf_dir, pdf_filename)
-            author = extract_author_from_pdf(pdf_path)
+            # Find PDF by article number prefix (robust to filename variations)
+            pdf_prefix = f"{num:02d}-"
+            pdf_files = [f for f in os.listdir(pdf_dir) if f.startswith(pdf_prefix) and f.endswith('.pdf')]
+
+            if pdf_files:
+                pdf_path = os.path.join(pdf_dir, pdf_files[0])
+                author = extract_author_from_pdf(pdf_path)
 
         if not author:
             # Try to extract from URL
