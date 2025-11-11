@@ -6,6 +6,57 @@ Historical workflow improvements and fixes for the article review system.
 
 ## November 11, 2025
 
+### 🛡️ Phase 1: Critical Data Protection Fixes
+
+**Code Review Findings:** Comprehensive code review identified 47 potential issues. Implemented 5 highest-priority fixes to prevent data loss, state corruption, and catastrophic failures.
+
+#### Fix #1: Atomic State File Writes
+**Problem:** State files written directly - crashes during write corrupted JSON, causing duplicate tickets.
+
+**Solution:** Implemented atomic write pattern (temp file + rename) in:
+- `scripts/monitor-optimizely-blog.py`
+- `scripts/anthropic-scraper.py`
+
+**Impact:** CRITICAL - Prevents state corruption that would cause duplicate ticket creation.
+
+#### Fix #2: Transactional Article Processing
+**Problem:** Articles marked "seen" immediately after ticket creation, before PDF upload. If upload failed, article was lost forever.
+
+**Solution:** Added `processing_succeeded` flag in `scripts/monitor-optimizely-blog.py` - articles only marked "seen" after ALL steps complete.
+
+**Impact:** HIGH - Eliminates silent data loss from partial failures. Failed articles retry automatically.
+
+#### Fix #3: Google Drive Token Expiration Handling
+**Problem:** Token expiration mid-batch caused API failures with no retry logic.
+
+**Solution:** Enhanced `scripts/extract-medium-articles.py`:
+- Added `get_drive_service(force_refresh=True)` parameter
+- Atomic token file updates
+- `drive_api_call_with_retry()` wrapper catches 401/403, refreshes, retries
+
+**Impact:** CRITICAL - Prevents mid-batch crashes from expired tokens.
+
+#### Fix #4: Disk Space Validation
+**Problem:** Audio generation creates large files (10MB+ each). No pre-flight check - script could fail after processing 15/20 articles.
+
+**Solution:** Added disk space check in `scripts/generate-audio-from-assessment.py` - estimates required space, fails fast with clear error.
+
+**Impact:** CRITICAL - Prevents resource exhaustion and partial batch failures.
+
+#### Fix #5: Atomic RSS Feed Generation
+**Problem:** RSS feed written directly - crashes corrupted XML, breaking podcast feed.
+
+**Solution:** `jaxon-research-feed/generate-feed.py` now:
+- Writes to temp file
+- Validates XML parsing
+- Atomic rename to final location
+
+**Impact:** CRITICAL - Prevents podcast feed corruption requiring manual recovery.
+
+**Testing:** All fixes verified with today's workflow (15 articles, 7 audio files generated).
+
+---
+
 ### 🔧 Fixed PDF Filename Mismatch Issues
 
 **Root Cause:** Scripts generated expected PDF filenames by converting article titles to lowercase with spaces replaced by hyphens. However, actual PDF filenames saved by Playwright could differ due to:
