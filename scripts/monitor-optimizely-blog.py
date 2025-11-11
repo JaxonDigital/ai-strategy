@@ -50,9 +50,29 @@ def load_state():
 
 
 def save_state(state):
-    """Save the state file with seen article GUIDs."""
-    with open(STATE_FILE, 'w') as f:
-        json.dump(state, f, indent=2)
+    """Save the state file with seen article GUIDs using atomic write."""
+    import tempfile
+
+    # Write to temporary file first
+    temp_fd, temp_path = tempfile.mkstemp(
+        dir=os.path.dirname(STATE_FILE) if os.path.dirname(STATE_FILE) else '.',
+        prefix='.optimizely-blog-state-',
+        suffix='.tmp'
+    )
+
+    try:
+        with os.fdopen(temp_fd, 'w') as f:
+            json.dump(state, f, indent=2)
+
+        # Atomic rename (POSIX guarantees atomicity)
+        os.replace(temp_path, STATE_FILE)
+    except Exception as e:
+        # Clean up temp file on error
+        try:
+            os.unlink(temp_path)
+        except:
+            pass
+        raise Exception(f"Failed to save state file: {e}")
 
 
 def fetch_rss_feed():
@@ -513,15 +533,11 @@ def main():
                 'created_at': datetime.now().isoformat()
             }
 
-            # Mark as seen immediately after successful creation
-            if not args.dry_run:
-                if article['guid'] not in state['seen_guids']:
-                    state['seen_guids'].append(article['guid'])
-                # Add to URL mapping
-                if 'url_to_ticket' not in state:
-                    state['url_to_ticket'] = {}
-                state['url_to_ticket'][article['url']] = ticket_id
+            # Track processing status - only mark as seen after ALL steps succeed
+            processing_succeeded = True
+            pdf_link = None
 
+            if not args.dry_run:
                 # Upload PDF if --upload-pdfs flag provided
                 if args.upload_pdfs:
                     pdf_path = find_matching_pdf(article, args.upload_pdfs, i)
@@ -552,11 +568,27 @@ def main():
                                     print(f"  ✓ JIRA updated")
                                     created_tickets[article['guid']]['pdf_link'] = pdf_link
                                 else:
-                                    print(f"  ⚠ JIRA update failed")
+                                    print(f"  ⚠ JIRA update failed (will retry next run)")
+                                    processing_succeeded = False
                         except Exception as e:
-                            print(f"  ⚠ PDF upload failed: {e}")
+                            print(f"  ⚠ PDF upload failed: {e} (will retry next run)")
+                            processing_succeeded = False
                     else:
+                        # No PDF found - this is OK, not all articles may have PDFs
                         print(f"  ⚠ No PDF found for article")
+
+                # TRANSACTIONAL: Only mark as seen if ALL processing steps succeeded
+                if processing_succeeded:
+                    if article['guid'] not in state['seen_guids']:
+                        state['seen_guids'].append(article['guid'])
+                    # Add to URL mapping
+                    if 'url_to_ticket' not in state:
+                        state['url_to_ticket'] = {}
+                    state['url_to_ticket'][article['url']] = ticket_id
+                else:
+                    print(f"  ⚠ Partial failure - will retry processing on next run")
+                    # Don't add to failed_articles since ticket was created successfully
+                    # Just skip marking as seen so it will be retried
 
         else:
             print(f"  ✗ Failed to create ticket")

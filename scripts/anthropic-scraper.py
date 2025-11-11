@@ -36,9 +36,29 @@ def load_state():
 
 
 def save_state(state):
-    """Save the state file with seen article URLs."""
-    with open(STATE_FILE, 'w') as f:
-        json.dump(state, f, indent=2)
+    """Save the state file with seen article URLs using atomic write."""
+    import tempfile
+
+    # Write to temporary file first
+    temp_fd, temp_path = tempfile.mkstemp(
+        dir=os.path.dirname(STATE_FILE) if os.path.dirname(STATE_FILE) else '.',
+        prefix='.anthropic-news-state-',
+        suffix='.tmp'
+    )
+
+    try:
+        with os.fdopen(temp_fd, 'w') as f:
+            json.dump(state, f, indent=2)
+
+        # Atomic rename (POSIX guarantees atomicity)
+        os.replace(temp_path, STATE_FILE)
+    except Exception as e:
+        # Clean up temp file on error
+        try:
+            os.unlink(temp_path)
+        except:
+            pass
+        raise Exception(f"Failed to save state file: {e}")
 
 
 def scrape_anthropic_news():

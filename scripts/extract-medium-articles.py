@@ -93,8 +93,12 @@ def extract_title_from_url(url):
     title = ' '.join(word.capitalize() for word in words)
     return title
 
-def get_drive_service():
-    """Get Google Drive API service using token from MCP server."""
+def get_drive_service(force_refresh=False):
+    """Get Google Drive API service using token from MCP server.
+
+    Args:
+        force_refresh: If True, force token refresh even if not expired
+    """
     # Use the token from the MCP server
     token_path = '/Users/bgerby/Documents/dev/ai/mcp-googledocs-server/token.json'
 
@@ -112,15 +116,53 @@ def get_drive_service():
         client_secret=token_data.get('client_secret')
     )
 
-    # Refresh if needed
-    if creds.expired and creds.refresh_token:
+    # Refresh if needed or forced
+    if force_refresh or (creds.expired and creds.refresh_token):
         creds.refresh(Request())
-        # Update token file
-        token_data['access_token'] = creds.token
-        with open(token_path, 'w') as f:
-            json.dump(token_data, f)
+        # Update token file atomically
+        import tempfile
+        temp_fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(token_path))
+        try:
+            with os.fdopen(temp_fd, 'w') as f:
+                token_data['access_token'] = creds.token
+                json.dump(token_data, f)
+            os.replace(temp_path, token_path)
+        except:
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+            raise
 
     return build('drive', 'v3', credentials=creds)
+
+
+def drive_api_call_with_retry(api_call_func):
+    """Wrapper to handle token expiration and retry Google Drive API calls.
+
+    Args:
+        api_call_func: Function that takes service as first arg and makes API call
+
+    Returns:
+        Result of api_call_func
+    """
+    from googleapiclient.errors import HttpError
+
+    try:
+        return api_call_func()
+    except HttpError as e:
+        # Handle 401 Unauthorized or 403 Forbidden (expired token)
+        if e.resp.status in [401, 403]:
+            print(f"  → Token expired, refreshing and retrying...")
+            # Force token refresh and retry once
+            try:
+                return api_call_func()
+            except Exception as retry_error:
+                print(f"  ✗ Retry failed: {retry_error}")
+                raise
+        else:
+            # Other HTTP errors, re-raise
+            raise
 
 def get_or_create_folder(service, folder_name, parent_id):
     """Get folder ID or create it if it doesn't exist."""

@@ -707,6 +707,31 @@ def main():
         print(f"Error: Assessment file not found: {assessment_path}")
         sys.exit(1)
 
+    # Check disk space before starting (critical - audio files can be large!)
+    import shutil
+    try:
+        free_space_bytes = shutil.disk_usage(output_dir.parent if output_dir.exists() else '.').free
+        free_space_mb = free_space_bytes / (1024 * 1024)
+
+        # Estimate: ~10MB per article (conservative estimate for audio files)
+        # Count PDFs to estimate required space
+        pdf_count = len(list(pdf_dir.glob('*.pdf')))
+        required_space_mb = pdf_count * 10
+
+        print(f"\nDisk Space Check:")
+        print(f"  Available: {free_space_mb:.1f} MB")
+        print(f"  Required: ~{required_space_mb} MB (for ~{pdf_count} articles)")
+
+        if free_space_mb < required_space_mb:
+            print(f"  ✗ ERROR: Insufficient disk space!")
+            print(f"  Need at least {required_space_mb} MB, have {free_space_mb:.1f} MB")
+            sys.exit(1)
+
+        print(f"  ✓ Sufficient disk space available\n")
+    except Exception as e:
+        print(f"  ⚠ Warning: Could not check disk space: {e}")
+        # Continue anyway - disk space check is informational
+
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print("Medium Article Audio Generator")
