@@ -596,7 +596,16 @@ def main():
     try:
         with open(metadata_json, 'r', encoding='utf-8') as f:
             metadata = json.load(f)
-            articles = metadata.get("articles", [])
+
+            # Handle both formats:
+            # 1. List format: [{article1}, {article2}, ...] (FreeCodeCamp)
+            # 2. Object format: {"articles": [{article1}, {article2}, ...]} (Medium, Optimizely)
+            if isinstance(metadata, list):
+                articles = metadata
+            elif isinstance(metadata, dict):
+                articles = metadata.get("articles", [])
+            else:
+                raise ValueError(f"Unexpected metadata format: {type(metadata)}")
     except Exception as e:
         print(f"Error loading metadata: {e}")
         sys.exit(1)
@@ -617,23 +626,30 @@ def main():
 
         print(f"[{i}/{len(articles)}] {ticket_id}: {title[:50]}...")
 
-        # Find PDF file
-        pdf_pattern = Path(pdf_dir) / pdf_filename
-        pdf_files = list(Path(pdf_dir).glob(pdf_filename if '*' in pdf_filename else f"*{pdf_filename}*"))
+        # Check if article has text directly in metadata (e.g., FreeCodeCamp from RSS)
+        text = None
+        if "article_text" in article and article["article_text"]:
+            text = clean_text_for_analysis(article["article_text"])
+            print(f"  → Using article text from metadata ({len(text)} characters)")
+        else:
+            # Fall back to PDF extraction (Medium, Optimizely, Anthropic)
+            # Find PDF file
+            pdf_pattern = Path(pdf_dir) / pdf_filename
+            pdf_files = list(Path(pdf_dir).glob(pdf_filename if '*' in pdf_filename else f"*{pdf_filename}*"))
 
-        if not pdf_files:
-            print(f"  ⚠ PDF not found: {pdf_filename}")
-            continue
+            if not pdf_files:
+                print(f"  ⚠ PDF not found: {pdf_filename}")
+                continue
 
-        pdf_path = str(pdf_files[0])
+            pdf_path = str(pdf_files[0])
 
-        # Extract text
-        text = extract_pdf_text(pdf_path)
-        if not text:
-            print(f"  ⚠ Could not extract text from PDF")
-            continue
+            # Extract text
+            text = extract_pdf_text(pdf_path)
+            if not text:
+                print(f"  ⚠ Could not extract text from PDF")
+                continue
 
-        print(f"  → Extracted {len(text)} characters")
+            print(f"  → Extracted {len(text)} characters from PDF")
 
         # Analyze with OpenAI
         analysis = analyze_article(client, title, url, text, ticket_id)
@@ -652,7 +668,14 @@ def main():
     print("GENERATING ASSESSMENT DOCUMENT")
     print(f"{'='*60}\n")
 
-    source = "Optimizely World Articles" if "optimizely" in pdf_dir.lower() else "Medium Articles"
+    # Detect source from directory path or article metadata
+    if "optimizely" in pdf_dir.lower():
+        source = "Optimizely World Articles"
+    elif "freecodecamp" in pdf_dir.lower() or (articles and articles[0].get("source") == "FreeCodeCamp"):
+        source = "FreeCodeCamp Articles"
+    else:
+        source = "Medium Articles"
+
     generate_assessment_document(articles, analyses, output_md, source)
 
     # Summary

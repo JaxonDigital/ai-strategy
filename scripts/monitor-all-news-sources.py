@@ -5,7 +5,8 @@ Combined News Sources Monitor
 Unified script to monitor and process articles from multiple sources:
 1. Medium daily digest (email parsing)
 2. Optimizely World blog (RSS feed)
-3. Anthropic news (web scraping)
+3. FreeCodeCamp blog (RSS feed)
+4. Anthropic news (web scraping)
 
 This script orchestrates the complete workflow:
 - Extract/scrape articles from all sources
@@ -46,6 +47,7 @@ from pathlib import Path
 SCRIPTS_DIR = Path(__file__).parent
 EXTRACT_MEDIUM = SCRIPTS_DIR / "extract-medium-articles.py"
 MONITOR_OPTIMIZELY = SCRIPTS_DIR / "monitor-optimizely-blog.py"
+MONITOR_FREECODECAMP = SCRIPTS_DIR / "monitor-freecodecamp-blog.py"
 SCRAPE_ANTHROPIC = SCRIPTS_DIR / "anthropic-scraper.py"
 GENERATE_ASSESSMENT = SCRIPTS_DIR / "generate-article-assessment.py"
 GENERATE_AUDIO = SCRIPTS_DIR / "generate-audio-from-assessment.py"
@@ -122,6 +124,25 @@ def process_optimizely(pdf_dir, dry_run=False):
         cmd.append("--dry-run")
 
     success = run_command(cmd, "Monitor Optimizely World Blog", dry_run)
+
+    if success and output_json.exists():
+        return str(output_json)
+    return None
+
+
+def process_freecodecamp(dry_run=False):
+    """Process FreeCodeCamp blog articles (RSS with full text)."""
+    output_json = TEMP_DIR / f"freecodecamp-articles-{datetime.now().strftime('%Y-%m-%d')}.json"
+
+    cmd = [
+        "python3", str(MONITOR_FREECODECAMP),
+        "--output-json", str(output_json)
+    ]
+
+    if dry_run:
+        cmd.append("--dry-run")
+
+    success = run_command(cmd, "Monitor FreeCodeCamp Blog", dry_run)
 
     if success and output_json.exists():
         return str(output_json)
@@ -285,6 +306,10 @@ def main():
     parser.add_argument('--optimizely-pdfs', type=str,
                         help='Directory containing Optimizely article PDFs')
 
+    # FreeCodeCamp arguments
+    parser.add_argument('--freecodecamp', action='store_true',
+                        help='Monitor FreeCodeCamp blog (RSS feed, no PDFs needed)')
+
     # Anthropic arguments
     parser.add_argument('--anthropic-scraped-json', type=str,
                         help='JSON file with scraped Anthropic news data')
@@ -309,9 +334,9 @@ def main():
             print(f"🔍 Auto-detected Medium email: {auto_email}")
 
     # Validate inputs
-    if not any([args.medium_email, args.optimizely_pdfs, args.anthropic_scraped_json]):
+    if not any([args.medium_email, args.optimizely_pdfs, args.freecodecamp, args.anthropic_scraped_json]):
         print("❌ Error: No sources specified. Provide at least one of:")
-        print("   --medium-email, --optimizely-pdfs, or --anthropic-scraped-json")
+        print("   --medium-email, --optimizely-pdfs, --freecodecamp, or --anthropic-scraped-json")
         sys.exit(1)
 
     # Prevent concurrent execution with lockfile
@@ -338,8 +363,10 @@ def main():
     print("\nSources to process:")
     if args.medium_email:
         print(f"  ✓ Medium (email: {args.medium_email})")
-    if args.optimizely_pdfs or not any([args.medium_email, args.anthropic_scraped_json]):
+    if args.optimizely_pdfs or not any([args.medium_email, args.freecodecamp, args.anthropic_scraped_json]):
         print(f"  ✓ Optimizely World Blog (RSS)")
+    if args.freecodecamp:
+        print(f"  ✓ FreeCodeCamp Blog (RSS)")
     if args.anthropic_scraped_json:
         print(f"  ✓ Anthropic News (scraped: {args.anthropic_scraped_json})")
 
@@ -361,6 +388,13 @@ def main():
         json_files.append(optimizely_json)
     if args.optimizely_pdfs:
         pdf_dirs.append(args.optimizely_pdfs)
+
+    # FreeCodeCamp
+    if args.freecodecamp:
+        freecodecamp_json = process_freecodecamp(args.dry_run)
+        if freecodecamp_json:
+            json_files.append(freecodecamp_json)
+        # Note: FreeCodeCamp articles have text in JSON, no PDFs needed
 
     # Anthropic
     if args.anthropic_scraped_json:
