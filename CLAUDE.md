@@ -155,8 +155,9 @@ python3 scripts/monitor-all-news-sources.py \
 #   6. Creates JIRA tickets with PDF links
 #   7. Generates UNIFIED assessment for all sources
 #   8. Generates audio for HIGH priority articles
-#   9. Updates JIRA with assessments and audio links
-#   10. Publishes RSS podcast feed
+#   9. Generates Medium recommendations (follow/mute suggestions) ← NEW (Nov 14, 2025)
+#   10. Updates JIRA with assessments and audio links
+#   11. Publishes RSS podcast feed
 ```
 
 **Prerequisites:**
@@ -182,6 +183,7 @@ python3 scripts/monitor-all-news-sources.py \
 - ✅ Unified assessment across all sources
 - ✅ No manual JIRA/Drive updates needed
 - ✅ Consistent priority scoring
+- ✅ Automatic Medium recommendations generation (Nov 14, 2025)
 - ✅ Automatic podcast feed updates
 
 ### Quick Start Commands (Legacy - Individual Sources)
@@ -227,11 +229,14 @@ python3 scripts/generate-article-assessment.py \
     /tmp/medium-articles.json \
     assessments/medium-articles-relevance-assessment-YYYY-MM-DD.md
 
-# Step 5: Generate recommendations (REQUIRED for every Medium batch!)
+# Step 5: Generate recommendations (AUTOMATED in unified workflow as of Nov 14, 2025)
+# ⚡ This step is now AUTOMATIC when using monitor-all-news-sources.py
+# Only run manually if using legacy individual source workflow:
 python3 scripts/generate-medium-recommendations.py \
     assessments/medium-articles-relevance-assessment-YYYY-MM-DD.md \
     /tmp/medium-articles.json
-# ✅ Automatically saves to: outputs/medium-recommendations-YYYY-MM-DD.txt (Nov 5, 2025)
+# ✅ Automatically saves to: outputs/medium-recommendations-YYYY-MM-DD.txt
+# ✅ Filename date extracted from assessment file (prevents overwrites)
 # Analyzes which authors/publications/topics to follow/mute based on HIGH vs LOW priority
 
 # Step 6: Generate audio for HIGH priority (FULLY AUTOMATIC!)

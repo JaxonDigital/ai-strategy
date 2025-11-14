@@ -51,6 +51,7 @@ MONITOR_FREECODECAMP = SCRIPTS_DIR / "monitor-freecodecamp-blog.py"
 SCRAPE_ANTHROPIC = SCRIPTS_DIR / "anthropic-scraper.py"
 GENERATE_ASSESSMENT = SCRIPTS_DIR / "generate-article-assessment.py"
 GENERATE_AUDIO = SCRIPTS_DIR / "generate-audio-from-assessment.py"
+GENERATE_RECOMMENDATIONS = SCRIPTS_DIR / "generate-medium-recommendations.py"
 
 # Temp directory for JSON outputs
 TEMP_DIR = Path("/tmp")
@@ -274,6 +275,28 @@ def generate_audio(pdf_dir, assessment_file, dry_run=False):
     return run_command(cmd, "Generate Audio for HIGH Priority Articles", dry_run)
 
 
+def generate_medium_recommendations(assessment_file, metadata_json, pdf_dir, dry_run=False):
+    """Generate Medium follow/mute recommendations based on assessment."""
+    if not assessment_file or not Path(assessment_file).exists():
+        print("⊘ Skipping Medium recommendations (no assessment file)")
+        return False
+
+    if not metadata_json or not Path(metadata_json).exists():
+        print("⊘ Skipping Medium recommendations (no metadata file)")
+        return False
+
+    cmd = [
+        "python3", str(GENERATE_RECOMMENDATIONS),
+        assessment_file,
+        metadata_json
+    ]
+
+    if pdf_dir and Path(pdf_dir).exists():
+        cmd.append(pdf_dir)
+
+    return run_command(cmd, "Generate Medium Recommendations", dry_run)
+
+
 def auto_detect_latest_email():
     """Auto-detect the most recent .eml file in inputs/ directory."""
     inputs_dir = Path(__file__).parent.parent / "inputs"
@@ -415,6 +438,15 @@ def main():
         primary_pdf_dir = pdf_dirs[0] if pdf_dirs else None
         if primary_pdf_dir:
             generate_audio(primary_pdf_dir, assessment_file, args.dry_run)
+
+    # Generate Medium recommendations (if Medium was processed)
+    if medium_json and assessment_file and args.medium_pdfs:
+        generate_medium_recommendations(
+            assessment_file,
+            medium_json,
+            args.medium_pdfs,
+            args.dry_run
+        )
 
     # Final summary
     print("\n" + "=" * 60)

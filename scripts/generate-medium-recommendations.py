@@ -462,15 +462,21 @@ def main():
     import io
     from contextlib import redirect_stdout
 
-    # Get current date for filename
-    current_date = datetime.now().strftime('%Y-%m-%d')
+    # Extract date from assessment filename (e.g., medium-articles-relevance-assessment-2025-11-13.md)
+    assessment_basename = os.path.basename(assessment_path)
+    date_match = re.search(r'(\d{4}-\d{2}-\d{2})', assessment_basename)
+    if date_match:
+        file_date = date_match.group(1)
+    else:
+        # Fallback to current date if pattern not found
+        file_date = datetime.now().strftime('%Y-%m-%d')
 
     # Create outputs directory if it doesn't exist
     outputs_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'outputs')
     os.makedirs(outputs_dir, exist_ok=True)
 
     # Output file path
-    output_file = os.path.join(outputs_dir, f'medium-recommendations-{current_date}.txt')
+    output_file = os.path.join(outputs_dir, f'medium-recommendations-{file_date}.txt')
 
     # Capture output
     output_buffer = io.StringIO()
