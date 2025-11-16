@@ -288,13 +288,19 @@ git add feed.rss && git commit -m "Add episodes" && git push
 - Login persists as long as browser stays open
 - Verify file sizes: 400KB+ = success, ~115KB = paywall
 
+**⚠️ CRITICAL RATE LIMITING (Updated November 16, 2025):**
+- **MINIMUM 150 seconds** between article navigations
+- Shorter delays (40-50 seconds) trigger Cloudflare bot detection
+- If Cloudflare challenge appears: close browser, wait 5+ minutes, restart session
+- Symptoms of rate limiting: "Verify you are human" challenge, "Enable JavaScript" messages
+
 **Process:**
 1. Open browser visible (`headless: false`) on first article
 2. **⚠️ PAUSE AND WAIT** - User must log in manually before proceeding
 3. **CRITICAL:** Do NOT navigate to second article until user confirms login is complete
 4. After login confirmation, wait 10 seconds for session to stabilize
 5. Save first article as PDF
-6. **⚠️ WAIT 30-45 SECONDS** before navigating to next article (Medium rate limiting)
+6. **⚠️ WAIT 150 SECONDS** before navigating to next article (Medium rate limiting - UPDATED Nov 16, 2025)
 7. Navigate to next article (browser still open)
 8. Wait for page to fully load (verify article text visible, not just headline)
 9. Repeat steps 5-8 for all remaining articles
@@ -305,8 +311,9 @@ git add feed.rss && git commit -m "Add episodes" && git push
 - When starting PDF capture, open first article with `headless: false`
 - **STOP and ask user**: "Please log in to Medium, then confirm when ready to proceed"
 - Wait for explicit user confirmation before saving first PDF or navigating to next article
-- After login confirmed, use explicit 30-45 second delays between each article navigation
+- After login confirmed, use explicit **150 second delays** between each article navigation (NOT 30-45 seconds!)
 - Verify each PDF file size before proceeding to next article
+- If rate limited: abort, close browser, inform user, wait 5+ minutes before retry
 
 ### Google Drive Integration
 
