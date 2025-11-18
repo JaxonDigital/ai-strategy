@@ -186,6 +186,62 @@ python3 scripts/monitor-all-news-sources.py \
 - ✅ Automatic Medium recommendations generation (Nov 14, 2025)
 - ✅ Automatic podcast feed updates
 
+### 🆕 Manual Article Processing (One-Off Links - Nov 17, 2025)
+
+**NEW: Process manually selected articles outside of email digests!**
+
+For articles you find on your own (TowardsAI, custom domains, specific interesting pieces):
+
+**✨ Automated workflow for 1-5 articles:**
+
+```bash
+# Step 1: Capture PDFs (via Claude Code + Playwright)
+# - Keep browser session open for all articles
+# - Save to: pdfs/manual-batch-YYYY-MM-DD/01-article-title.pdf
+# - Use exact numbering: 01-, 02-, 03-, etc.
+
+# Step 2: Run automated script
+export OPENAI_API_KEY="sk-proj-..."
+python3.11 scripts/process-manual-articles.py \
+    --pdf-dir pdfs/manual-batch-YYYY-MM-DD \
+    --url "https://pub.towardsai.net/article-1" \
+    --url "https://medium.com/@author/article-2" \
+    --url "https://custom-domain.com/article-3"
+
+# ✨ This automatically:
+#   1. Uploads PDFs to Google Drive
+#   2. Creates JIRA tickets with PDF links
+#   3. Generates AI assessment
+#   4. Generates audio for HIGH priority articles
+#   5. Updates JIRA with assessments and audio
+#   6. Regenerates and pushes RSS feed
+```
+
+**Prerequisites:**
+- PDFs captured via Playwright (numbered 01-, 02-, etc.)
+- URLs provided in same order as PDF numbers
+- Works with any Medium.com domain (medium.com, towardsai.net, etc.)
+
+**Benefits:**
+- ✅ Works with 1 to many articles (optimal: 2-5)
+- ✅ Single command for complete workflow
+- ✅ No manual JIRA/Drive operations
+- ✅ Handles custom domains (TowardsAI, etc.)
+
+**When to use:**
+- Manually found interesting articles
+- Non-digest articles from Medium
+- Testing new domains
+- Small batches of related topics
+
+**Tested and Working (Nov 18, 2025):**
+- ✅ JIRA ticket creation with bash subprocess
+- ✅ Google Drive upload and public sharing
+- ✅ AI assessment generation with GPT-4
+- ✅ JIRA ticket updates with assessments
+- ✅ Audio generation for HIGH priority articles
+- ✅ Complete end-to-end workflow validated
+
 ### Quick Start Commands (Legacy - Individual Sources)
 
 **Medium Articles:**
@@ -341,6 +397,7 @@ Root (0ALLCxnOLmj3bUk9PVA)
 
 **All scripts are now in the repository** (`/Users/bgerby/Documents/dev/ai/scripts/`):
 - `monitor-all-news-sources.py` - **🆕 UNIFIED processor for all sources (RECOMMENDED)**
+- `process-manual-articles.py` - **🆕 Process manually selected articles (1-5 URLs) with full automation (Nov 17, 2025)**
 - `prepare-pdf-capture.py` - **🆕 Extract article titles BEFORE PDF capture (Nov 5, 2025) - CRITICAL for correct PDF numbering (regex fix Nov 10, 2025)**
 - `extract-medium-articles.py` - Parse Medium emails
 - `generate-article-assessment.py` - AI analysis with GPT-4
