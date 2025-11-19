@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.11
 """
 Extract all Medium articles from daily digest email and create Jira tickets.
 
@@ -25,6 +25,7 @@ import sys
 import subprocess
 import os
 import json
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from google.oauth2.credentials import Credentials
@@ -48,6 +49,16 @@ except ImportError:
     JIRA_PROJECT_GAT = 'GAT'
     JIRA_TICKET_PATTERN = r'GAT-\d+'
     ERROR_LOG_FILE = "/tmp/workflow-errors.log"
+
+# Import shared configuration
+try:
+    from config import Config
+    JIRA_TOKEN_FILE = str(Config.JIRA_TOKEN_FILE)
+    GOOGLE_DRIVE_TOKEN = str(Config.GOOGLE_DRIVE_TOKEN_FILE)
+except ImportError:
+    # Fallback if config not available
+    JIRA_TOKEN_FILE = os.path.expanduser('~/.jira.d/.pass')
+    GOOGLE_DRIVE_TOKEN = '/Users/bgerby/Documents/dev/ai/mcp-googledocs-server/token.json'
 
 def log_subprocess_error(command_name, stderr_output, log_file=ERROR_LOG_FILE):
     """Log subprocess stderr to file for debugging."""
@@ -106,7 +117,8 @@ def extract_articles(email_path):
                             if url not in seen:
                                 seen.add(url)
                                 articles.append(url)
-                    except:
+                    except Exception as e:
+                        # Ignore malformed base64 or decode errors
                         pass
                     base64_content = []
                 in_base64 = False
@@ -144,7 +156,7 @@ def get_drive_service(force_refresh=False):
         force_refresh: If True, force token refresh even if not expired
     """
     # Use the token from the MCP server
-    token_path = '/Users/bgerby/Documents/dev/ai/mcp-googledocs-server/token.json'
+    token_path = GOOGLE_DRIVE_TOKEN
 
     if not os.path.exists(token_path):
         raise Exception(f"Google Drive token not found at {token_path}")
@@ -171,41 +183,65 @@ def get_drive_service(force_refresh=False):
                 token_data['access_token'] = creds.token
                 json.dump(token_data, f)
             os.replace(temp_path, token_path)
-        except:
+        except Exception as e:
             try:
                 os.unlink(temp_path)
-            except:
+            except OSError:
+                # Temp file already cleaned up or doesn't exist
                 pass
             raise
 
     return build('drive', 'v3', credentials=creds)
 
 
-def drive_api_call_with_retry(api_call_func):
-    """Wrapper to handle token expiration and retry Google Drive API calls.
+def drive_api_call_with_retry(api_call_func, max_retries=3):
+    """Wrapper to handle token expiration, rate limits, and transient errors for Google Drive API calls.
 
     Args:
-        api_call_func: Function that takes service as first arg and makes API call
+        api_call_func: Function that makes API call
+        max_retries: Maximum number of retry attempts (default: 3)
 
     Returns:
         Result of api_call_func
     """
     from googleapiclient.errors import HttpError
+    import time
+    import random
 
-    try:
-        return api_call_func()
-    except HttpError as e:
-        # Handle 401 Unauthorized or 403 Forbidden (expired token)
-        if e.resp.status in [401, 403]:
-            print(f"  → Token expired, refreshing and retrying...")
-            # Force token refresh and retry once
-            try:
-                return api_call_func()
-            except Exception as retry_error:
-                print(f"  ✗ Retry failed: {retry_error}")
+    for attempt in range(max_retries):
+        try:
+            return api_call_func()
+        except HttpError as e:
+            status = e.resp.status
+
+            # Handle 401 Unauthorized or 403 Forbidden (expired token)
+            if status in [401, 403]:
+                print(f"  → Token expired, refreshing and retrying...")
+                # Force token refresh and retry once
+                try:
+                    return api_call_func()
+                except Exception as retry_error:
+                    print(f"  ✗ Retry failed: {retry_error}")
+                    raise
+
+            # Handle rate limiting (429) and transient errors (500, 503)
+            elif status in [429, 500, 503]:
+                if attempt < max_retries - 1:
+                    # Exponential backoff with jitter
+                    delay = (2 ** attempt) + random.uniform(0, 1)
+                    print(f"  → Drive API error {status}, retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(delay)
+                else:
+                    # Last attempt failed
+                    print(f"  ✗ Drive API error {status} after {max_retries} attempts")
+                    raise
+
+            # Other HTTP errors, re-raise immediately
+            else:
                 raise
-        else:
-            # Other HTTP errors, re-raise
+
+        except Exception as e:
+            # Non-HTTP errors, don't retry
             raise
 
 def get_or_create_folder(service, folder_name, parent_id):
@@ -280,7 +316,9 @@ def get_shareable_link(service, file_id):
 
 def update_jira_description(ticket_id, url, drive_link):
     """Update JIRA ticket description with Drive link."""
-    jira_token = os.popen('cat ~/.jira.d/.pass').read().strip()
+    # Read JIRA token securely from file (not via shell)
+    with open(JIRA_TOKEN_FILE, 'r') as f:
+        jira_token = f.read().strip()
 
     new_description = f"""Medium Article Review
 
@@ -299,18 +337,92 @@ To be reviewed for relevance to Jaxon Digital's AI agent initiatives."""
     env = os.environ.copy()
     env['JIRA_API_TOKEN'] = jira_token
 
-    result = subprocess.run(cmd, env=env, capture_output=True, text=True)
+    try:
+        result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=15)
 
-    # Log any errors from JIRA CLI
-    if result.returncode != 0 and result.stderr:
-        log_subprocess_error(f"JIRA edit {ticket_id}", result.stderr)
-        print(f"    ✗ JIRA CLI error: {result.stderr.strip()[:100]}")
+        # Log any errors from JIRA CLI
+        if result.returncode != 0 and result.stderr:
+            log_subprocess_error(f"JIRA edit {ticket_id}", result.stderr)
+            print(f"    ✗ JIRA CLI error: {result.stderr.strip()[:100]}")
 
-    return result.returncode == 0
+        return result.returncode == 0
+    except subprocess.TimeoutExpired:
+        print(f"    ✗ JIRA CLI timeout (15s) - ticket {ticket_id} may not be updated")
+        return False
+
+def check_existing_ticket_by_url(article_url):
+    """
+    Check if a ticket already exists for this article URL.
+
+    Searches JIRA for tickets containing this URL in the description.
+    This prevents duplicate tickets for the same article.
+
+    Returns: (ticket_id, exists) tuple
+    """
+    try:
+        env = os.environ.copy()
+        if not os.path.exists(JIRA_TOKEN_FILE):
+            return (None, False)
+
+        with open(JIRA_TOKEN_FILE, 'r') as f:
+            env['JIRA_API_TOKEN'] = f.read().strip()
+
+        # Search using jira list - look for recent tickets with Medium label
+        result = subprocess.run(
+            ['jira', 'issue', 'list', '-p', JIRA_PROJECT_GAT, '-l', 'Medium', '--plain', '--created', 'month'],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=env
+        )
+
+        if result.returncode == 0:
+            lines = result.stdout.strip().split('\n')
+            for line in lines:
+                # If line contains a ticket ID, check that ticket for the URL
+                match = re.search(r'(GAT-\d+)', line)
+                if match:
+                    ticket_id = match.group(1)
+                    # Quick check: view ticket and search for URL
+                    view_result = subprocess.run(
+                        ['jira', 'issue', 'view', ticket_id],
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                        env=env
+                    )
+                    if view_result.returncode == 0 and article_url in view_result.stdout:
+                        return (ticket_id, True)
+        else:
+            print(f"⚠️  WARNING: JIRA search command failed (exit code {result.returncode})")
+            print(f"    stdout: {result.stdout[:200]}")
+            print(f"    stderr: {result.stderr[:200]}")
+
+    except Exception as e:
+        # Log the error but don't silently create duplicates
+        print(f"⚠️  WARNING: Duplicate check failed for {article_url}")
+        print(f"    Error: {e}")
+        print(f"    To avoid duplicates, manually check JIRA before proceeding.")
+        print(f"    Returning 'not found' - ticket will be created.")
+
+    return (None, False)
+
 
 def create_jira_ticket(url, title, pdf_link=None):
-    """Create a Jira ticket for the article with PDF link."""
-    jira_token = os.popen('cat ~/.jira.d/.pass').read().strip()
+    """Create a Jira ticket for the article with PDF link.
+
+    Checks for existing tickets first to prevent duplicates.
+    Returns existing ticket ID if found, or creates new ticket.
+    """
+    # Check for existing ticket first
+    existing_ticket, exists = check_existing_ticket_by_url(url)
+    if exists:
+        print(f"    → Ticket already exists: {existing_ticket}")
+        return existing_ticket
+
+    # Read JIRA token securely from file (not via shell)
+    with open(JIRA_TOKEN_FILE, 'r') as f:
+        jira_token = f.read().strip()
 
     summary = f"Review: {title}"
 
@@ -340,20 +452,24 @@ To be reviewed for relevance to Jaxon Digital's AI agent initiatives."""
     env = os.environ.copy()
     env['JIRA_API_TOKEN'] = jira_token
 
-    result = subprocess.run(cmd, env=env, capture_output=True, text=True)
+    try:
+        result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=15)
 
-    if result.returncode == 0:
-        # Extract ticket number from output
-        match = re.search(r'GAT-\d+', result.stdout)
-        if match:
-            return match.group(0)
-    else:
-        # Log any errors from JIRA CLI
-        if result.stderr:
-            log_subprocess_error("JIRA create ticket", result.stderr)
-            print(f"    ✗ JIRA CLI error: {result.stderr.strip()[:100]}")
+        if result.returncode == 0:
+            # Extract ticket number from output
+            match = re.search(r'GAT-\d+', result.stdout)
+            if match:
+                return match.group(0)
+        else:
+            # Log any errors from JIRA CLI
+            if result.stderr:
+                log_subprocess_error("JIRA create ticket", result.stderr)
+                print(f"    ✗ JIRA CLI error: {result.stderr.strip()[:100]}")
 
-    return None
+        return None
+    except subprocess.TimeoutExpired:
+        print(f"    ✗ JIRA CLI timeout (15s) - ticket creation failed")
+        return None
 
 def auto_detect_latest_email():
     """Auto-detect the most recent .eml file in inputs/ directory."""
@@ -465,6 +581,12 @@ def main():
                 pdf_filename = pdf_files[0]
                 pdf_path = os.path.join(upload_to_drive, pdf_filename)
 
+                # Validate PDF size (detect paywall failures)
+                pdf_size_kb = os.path.getsize(pdf_path) / 1024
+                if pdf_size_kb < 200:
+                    print(f"    ⚠ Warning: PDF is very small ({pdf_size_kb:.1f} KB) - may be paywall failure")
+                    print(f"    Expected: 400+ KB for full article, ~115 KB indicates paywall")
+
                 try:
                     file_id, web_link = upload_file_to_drive(drive_service, pdf_path, pdfs_folder)
                     drive_link = get_shareable_link(drive_service, file_id)
@@ -506,15 +628,34 @@ def main():
     if not upload_to_drive:
         print("To upload PDFs to Drive, run with --upload-to-drive PDF_DIR flag")
 
-    # Write JSON output if requested
+    # Write JSON output if requested (atomic write to prevent corruption)
     if output_json:
-        with open(output_json, 'w') as f:
-            json.dump({
-                'date': current_date,
-                'email_path': email_path,
-                'articles': article_data
-            }, f, indent=2)
-        print(f"\n✓ Wrote article metadata to {output_json}")
+        output_path = Path(output_json)
+        temp_fd, temp_path = tempfile.mkstemp(
+            dir=output_path.parent,
+            prefix='.medium-articles-',
+            suffix='.tmp'
+        )
+
+        try:
+            with os.fdopen(temp_fd, 'w') as f:
+                json.dump({
+                    'date': current_date,
+                    'email_path': email_path,
+                    'articles': article_data
+                }, f, indent=2)
+
+            # Atomic rename (POSIX guarantees atomicity)
+            os.replace(temp_path, output_json)
+            print(f"\n✓ Wrote article metadata to {output_json}")
+        except Exception as e:
+            # Clean up temp file on error
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                # Temp file already cleaned up or doesn't exist
+                pass
+            raise Exception(f"Failed to write article metadata: {e}")
 
 if __name__ == '__main__':
     main()

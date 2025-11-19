@@ -525,6 +525,77 @@ https://drive.google.com/uc?export=download&id=FILE_ID
 
 **Prevention:** The `generate-audio-from-assessment.py` script should automatically use the correct format. This was an isolated issue from manual URL entry.
 
+#### Troubleshooting: Duplicate JIRA Tickets (Fixed November 19, 2025)
+
+**Issue:** Multiple tickets created for the same article when running workflows multiple times on the same day.
+
+**Root Cause:** Silent exception handling in `extract-medium-articles.py` duplicate detection (lines 397-399). When JIRA search fails (timeout, API error, etc.), the script silently creates a new ticket instead of failing loudly or warning the user.
+
+**Symptoms:**
+- Same article has 2-3 tickets (e.g., GAT-890, GAT-899, GAT-909 all for Neo4j article)
+- Tickets created on same day with sequential IDs
+- Usually happens when re-running scripts after failures
+
+**Solution Applied (November 19, 2025):**
+```python
+# extract-medium-articles.py lines 397-402
+except Exception as e:
+    # Log the error but don't silently create duplicates
+    print(f"⚠️  WARNING: Duplicate check failed for {article_url}")
+    print(f"    Error: {e}")
+    print(f"    To avoid duplicates, manually check JIRA before proceeding.")
+    print(f"    Returning 'not found' - ticket will be created.")
+
+return (None, False)
+```
+
+**How to Fix Duplicates:**
+```bash
+# 1. Identify duplicates (check tickets created same day)
+export JIRA_API_TOKEN="`cat ~/.jira.d/.pass`"
+for num in range(888, 920):
+    # Python script to list all tickets from date range
+
+# 2. Close duplicates via Python API
+python3 << 'EOF'
+import urllib.request, base64, json
+
+url = 'https://jaxondigital.atlassian.net'
+token = open('/Users/bgerby/.jira.d/.pass').read().strip()
+auth = base64.b64encode(f'bgerby@jaxondigital.com:{token}'.encode()).decode()
+
+dupes = ['GAT-897', 'GAT-899', ...]  # Duplicate ticket IDs
+
+for ticket in dupes:
+    # Get available transitions
+    req = urllib.request.Request(f'{url}/rest/api/3/issue/{ticket}/transitions')
+    req.add_header('Authorization', f'Basic {auth}')
+    # ... transition to Done
+EOF
+```
+
+**Prevention:**
+- Always check for WARNING messages in script output
+- If duplicate detection fails, manually verify JIRA before continuing
+- Consider adding retry logic to JIRA search operations
+- Monitor JIRA API rate limits
+
+**Related Script Issues:**
+- `generate-audio-from-assessment.py` uses **positional arguments** not `--metadata` flag:
+  ```bash
+  # ✅ CORRECT
+  python3.11 scripts/generate-audio-from-assessment.py \
+      pdfs/medium-articles-YYYY-MM-DD \
+      assessments/medium-articles-relevance-assessment-YYYY-MM-DD.md \
+      /tmp/medium-articles-YYYY-MM-DD.json
+
+  # ❌ WRONG
+  python3.11 scripts/generate-audio-from-assessment.py \
+      pdfs/medium-articles-YYYY-MM-DD \
+      assessments/medium-articles-relevance-assessment-YYYY-MM-DD.md \
+      --metadata /tmp/medium-articles-YYYY-MM-DD.json
+  ```
+
 ### Assessment Criteria (Updated for SaaS Pivot - October 2025)
 
 **Note**: Article assessment now uses strategic context from Pivot project automatically.
