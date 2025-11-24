@@ -294,7 +294,7 @@ Focus on:
         # Wrap API call with retry logic for rate limit handling
         def make_api_call():
             return client.chat.completions.create(
-                model="gpt-4-turbo-preview",
+                model="gpt-5.1",
                 messages=[
                     {"role": "system", "content": "You are a strategic analyst for Jaxon Digital, assessing article relevance to AI agent initiatives."},
                     {"role": "user", "content": prompt}
@@ -343,7 +343,7 @@ Combine insights from all chunks, prioritize most important points, remove dupli
         # Wrap API call with retry logic for rate limit handling
         def make_api_call():
             return client.chat.completions.create(
-                model="gpt-4-turbo-preview",
+                model="gpt-5.1",
                 messages=[
                     {"role": "system", "content": "You are a strategic analyst synthesizing multi-part article analysis."},
                     {"role": "user", "content": synthesis_prompt}
