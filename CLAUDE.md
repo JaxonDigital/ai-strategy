@@ -246,16 +246,27 @@ python3.11 scripts/process-manual-articles.py \
 
 **Medium Articles:**
 ```bash
-# Step 0: Get exact PDF filenames BEFORE capture (prevents renaming issues!)
-python3 scripts/prepare-pdf-capture.py
-# Automatically detects latest email from inputs/ and prints exact filenames to use
+# ⭐ RECOMMENDED: Fully Automated PDF Capture (November 28, 2025)
+# Uses persistent Chrome profile with saved Medium login session
+python3 scripts/capture-medium-pdfs-automated.py inputs/MM-DD.eml --pdf-dir pdfs/medium-articles-YYYY-MM-DD
+# - Runs completely hands-free after initial setup
+# - Uses saved session (no login needed)
+# - Handles rate limiting automatically
+# - Total time: ~3 min per article (mostly wait time)
 
-# Step 1: Capture PDFs (ask Claude Code to use Playwright)
-# - Navigate with headless: false for manual login
-# - Use EXACT filenames from Step 0 guide
-# - Keep browser open between articles
-# - Files 400KB+ = success, ~115KB = paywall
-# - Save to: pdfs/medium-articles-YYYY-MM-DD/
+# First-time setup (one-time only):
+python3 scripts/capture-medium-pdfs-automated.py inputs/MM-DD.eml --first-run --pdf-dir pdfs/medium-articles-YYYY-MM-DD
+# - Browser opens visible, log into Medium manually
+# - Complete email 2FA if prompted
+# - Session saves to ~/.medium-automation-profile
+# - Future runs are fully automated
+
+# ⚠️ IMPORTANT: Always specify --pdf-dir with the EMAIL date (not today's date!)
+# Example: For 11-22.eml, use --pdf-dir pdfs/medium-articles-2025-11-22
+
+# 🔧 FALLBACK: Semi-Automated (if automated fails)
+# python3 scripts/capture-medium-pdfs-assisted.py inputs/MM-DD.eml --pdf-dir pdfs/medium-articles-YYYY-MM-DD
+# - Opens articles in Chrome, you manually save PDFs via PrintFriendly extension
 
 # Step 2: Extract from email AND upload PDFs (combined step)
 # ⚠️ NOTE: Email files stored in: inputs/MM-DD.eml
@@ -336,40 +347,42 @@ git add feed.rss && git commit -m "Add episodes" && git push
 
 ### Critical: Medium Paywall Bypass
 
-**⚠️ REQUIREMENT:** Never process paywalled articles without full access. Always have user log in first.
+**✅ UPDATE (November 28, 2025):** Fully automated Playwright capture now works using persistent Chrome profile with saved Medium session.
 
-**Key Principles:**
-- Keep browser session open across all articles (don't close between articles)
-- Use `headless: false` for manual login
-- Login persists as long as browser stays open
-- Verify file sizes: 400KB+ = success, ~115KB = paywall
+**⭐ RECOMMENDED: Fully Automated PDF Capture**
 
-**⚠️ CRITICAL RATE LIMITING (Updated November 16, 2025):**
-- **MINIMUM 150 seconds** between article navigations
-- Shorter delays (40-50 seconds) trigger Cloudflare bot detection
-- If Cloudflare challenge appears: close browser, wait 5+ minutes, restart session
-- Symptoms of rate limiting: "Verify you are human" challenge, "Enable JavaScript" messages
+Uses Playwright with a dedicated Chrome profile that saves your Medium login session.
 
-**Process:**
-1. Open browser visible (`headless: false`) on first article
-2. **⚠️ PAUSE AND WAIT** - User must log in manually before proceeding
-3. **CRITICAL:** Do NOT navigate to second article until user confirms login is complete
-4. After login confirmation, wait 10 seconds for session to stabilize
-5. Save first article as PDF
-6. **⚠️ WAIT 150 SECONDS** before navigating to next article (Medium rate limiting - UPDATED Nov 16, 2025)
-7. Navigate to next article (browser still open)
-8. Wait for page to fully load (verify article text visible, not just headline)
-9. Repeat steps 5-8 for all remaining articles
-10. Verify file sizes after each save: 400KB+ = success, ~115KB = paywall failure
-11. Close browser only when all articles captured
+**First-time setup (one-time only):**
+```bash
+python3 scripts/capture-medium-pdfs-automated.py inputs/MM-DD.eml --first-run --pdf-dir pdfs/medium-articles-YYYY-MM-DD
+# - Browser opens visible
+# - Log into Medium manually (complete email 2FA if prompted)
+# - Script saves first article to confirm it works
+# - Session saves to ~/.medium-automation-profile
+```
 
-**Claude Code Workflow:**
-- When starting PDF capture, open first article with `headless: false`
-- **STOP and ask user**: "Please log in to Medium, then confirm when ready to proceed"
-- Wait for explicit user confirmation before saving first PDF or navigating to next article
-- After login confirmed, use explicit **150 second delays** between each article navigation (NOT 30-45 seconds!)
-- Verify each PDF file size before proceeding to next article
-- If rate limited: abort, close browser, inform user, wait 5+ minutes before retry
+**Daily usage (fully automated):**
+```bash
+python3 scripts/capture-medium-pdfs-automated.py inputs/MM-DD.eml --pdf-dir pdfs/medium-articles-YYYY-MM-DD
+# - Uses saved session (no login needed)
+# - Runs headless - completely hands-free
+# - Handles rate limiting automatically
+# - ~3 min per article (mostly wait time for rate limits)
+```
+
+**⚠️ IMPORTANT:** Always use `--pdf-dir` with the EMAIL date, not today's date!
+- For `11-22.eml` → `--pdf-dir pdfs/medium-articles-2025-11-22`
+
+**If session expires:** Run with `--first-run` again to re-authenticate.
+
+**🔧 FALLBACK: Semi-Automated (if automated fails)**
+```bash
+python3 scripts/capture-medium-pdfs-assisted.py inputs/MM-DD.eml --pdf-dir pdfs/medium-articles-YYYY-MM-DD
+# - Opens articles in Chrome automatically
+# - You manually click PrintFriendly extension to save each PDF
+# - Requires PrintFriendly & PDF Chrome extension installed
+```
 
 ### Google Drive Integration
 
@@ -469,6 +482,23 @@ git add feed.rss && git commit -m "Fix metadata for GAT-XXX episodes" && git pus
 ```
 
 **Prevention:** Always use `generate-audio-from-assessment.py` for new episodes (includes proper metadata). Only use `retry-single-audio.py` for emergency re-generation, then manually add metadata afterward.
+
+**Using retry-single-audio.py (requires 3 arguments):**
+```bash
+# Syntax: ticket_id, title, pdf_path
+OPENAI_API_KEY="sk-proj-..." python3.11 scripts/retry-single-audio.py \
+    GAT-968 \
+    "Optimizely Opal" \
+    /Users/bgerby/Documents/dev/ai/pdfs/optimizely-articles-2025-11-28/02-optimizely-opal.pdf
+
+# After generation, manually add metadata if ffmpeg step fails:
+ffmpeg -i audio-reviews/GAT-XXX.mp3 -acodec copy \
+  -metadata title="XXX - Article Title" \
+  -metadata artist="Jaxon Research" \
+  -metadata album="Article Review" \
+  -y audio-reviews/GAT-XXX.temp.mp3 && \
+  mv audio-reviews/GAT-XXX.temp.mp3 audio-reviews/GAT-XXX.mp3
+```
 
 **Bulk Fix (if many episodes affected):**
 ```bash
@@ -595,6 +625,27 @@ EOF
       assessments/medium-articles-relevance-assessment-YYYY-MM-DD.md \
       --metadata /tmp/medium-articles-YYYY-MM-DD.json
   ```
+
+#### Troubleshooting: Optimizely/Anthropic Audio Shows "0 articles" (November 28, 2025)
+
+**Issue:** Running `generate-audio-from-assessment.py` for Optimizely or Anthropic sources shows "Found 0 articles" even though HIGH priority articles exist.
+
+**Root Cause:** The audio generator script parses assessment files expecting `ARTICLE-XX` format (e.g., `ARTICLE-01`), but Optimizely and Anthropic assessments use `GAT-XXX` format directly (e.g., `GAT-968`).
+
+**Workaround:** Use `retry-single-audio.py` for HIGH priority Optimizely/Anthropic articles:
+```bash
+# 1. Identify HIGH priority tickets from assessment
+# 2. Generate audio individually:
+OPENAI_API_KEY="sk-proj-..." python3.11 scripts/retry-single-audio.py \
+    GAT-968 "Optimizely Opal" /path/to/pdf.pdf
+
+# 3. Upload to Drive and update JIRA manually (or via Python script)
+# 4. Regenerate RSS feed:
+cd /Users/bgerby/Documents/dev/ai/jaxon-research-feed
+python3 generate-feed.py && git add feed.rss && git commit -m "Add episode" && git push
+```
+
+**Future Fix:** Update `generate-audio-from-assessment.py` to handle both ARTICLE-XX and GAT-XXX formats in assessments.
 
 ### Assessment Criteria (Updated for SaaS Pivot - October 2025)
 
